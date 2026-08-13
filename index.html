@@ -45,6 +45,8 @@
   .wrap { max-width: 1060px; margin: 0 auto; padding: 24px 20px 48px; }
   header h1 { font-size: 20px; font-weight: 600; margin: 0; }
   header p  { margin: 2px 0 0; color: var(--text-secondary); }
+  header .status { color: var(--text-primary); font-weight: 600; margin-top: 6px; }
+  .footnote { color: var(--text-muted); font-size: 12.5px; margin: 12px 2px 0; }
 
   /* Hàng điều khiển: checkbox từng chỉ số */
   .controls {
@@ -119,6 +121,7 @@
   #tooltip .tt-row { display: flex; align-items: center; gap: 8px; padding: 1px 0; }
   #tooltip .tt-key { width: 14px; height: 0; border-top: 2.5px solid var(--c); border-radius: 2px; flex: none; }
   #tooltip .tt-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  #tooltip .tt-delta { color: var(--text-muted); font-variant-numeric: tabular-nums; }
   #tooltip .tt-name { color: var(--text-secondary); }
 
   /* Bảng số liệu */
@@ -146,6 +149,7 @@
   <header>
     <h1>Theo dõi thai kỳ</h1>
     <p>Chỉ số siêu âm qua từng mốc khám — tick để bật/tắt từng chỉ số.</p>
+    <p class="status" id="status" hidden></p>
   </header>
 
   <div class="controls" id="controls" hidden>
@@ -157,6 +161,11 @@
   <div class="notice" id="notice" hidden></div>
 
   <div class="charts" id="charts"></div>
+
+  <p class="footnote" id="refNote" hidden>
+    Vùng mờ trên biểu đồ là khoảng tham chiếu xấp xỉ (p5–p95, đường mảnh là trung vị)
+    — chỉ để tham khảo, kết luận về sức khỏe của bé luôn theo bác sĩ của bạn.
+  </p>
 
   <details class="table-view" id="tableView" hidden>
     <summary>Bảng số liệu</summary>
@@ -181,6 +190,8 @@ const DATA_PATH   = "data"; // đường dẫn thư mục data bên trong repo
 let metrics = [];
 let timeKind = null;          // 'week' | 'date'
 let hidden = new Set(JSON.parse(localStorage.getItem(STORE_KEY) || "[]"));
+let config = {};              // đọc từ config.txt (du-sinh / kinh-cuoi)
+let pregInfo = null;          // {edd, todayWeek, daysLeft}
 
 const $ = id => document.getElementById(id);
 const nf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
@@ -332,6 +343,80 @@ async function loadFromServer() {
   return results;
 }
 
+// config.txt (cạnh index.html): mỗi dòng "khóa: giá trị".
+// Hỗ trợ: du-sinh (ngày dự sinh) hoặc kinh-cuoi (ngày đầu kỳ kinh cuối).
+async function loadConfig() {
+  config = {};
+  try {
+    const res = await fetch("config.txt", { cache: "no-store" });
+    if (!res.ok) return;
+    for (const line of (await res.text()).split(/\r?\n/)) {
+      const m = line.match(/^([\w-]+)\s*[:=\t]\s*(.+)$/);
+      if (m) config[m[1].toLowerCase()] = m[2].trim();
+    }
+  } catch (e) { /* không có config cũng chẳng sao */ }
+}
+
+function pregnancyInfo() {
+  let edd = null;
+  if (config["du-sinh"]) {
+    const p = parseTime(config["du-sinh"]);
+    if (p && p.kind === "date") edd = p.t;
+  }
+  if (edd == null && config["kinh-cuoi"]) {
+    const p = parseTime(config["kinh-cuoi"]);
+    if (p && p.kind === "date") edd = p.t + 280 * 864e5;
+  }
+  if (edd == null) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const daysLeft = Math.round((edd - today.getTime()) / 864e5);
+  const gaDays = 280 - daysLeft;
+  if (gaDays < 0 || gaDays > 315) return null; // ngoài thai kỳ thì thôi
+  return { edd, todayWeek: gaDays / 7, daysLeft };
+}
+
+// Khoảng tham chiếu: refs/<cùng tên file data>, mỗi dòng "tuần p5 p50 p95"
+async function loadRefs() {
+  await Promise.all(metrics.map(async m => {
+    m.ref = null;
+    try {
+      const res = await fetch("refs/" + encodeURIComponent(m.file), { cache: "no-store" });
+      if (!res.ok) return;
+      const rows = (await res.text()).split(/\r?\n/)
+        .map(l => l.trim()).filter(Boolean).map(splitCols)
+        .filter(c => c.length >= 4)
+        .map(c => {
+          const t = parseTime(c[0]);
+          return t && t.kind === "week"
+            ? { t: t.t, lo: parseNumber(c[1]), mid: parseNumber(c[2]), hi: parseNumber(c[3]) }
+            : null;
+        })
+        .filter(r => r && [r.lo, r.mid, r.hi].every(Number.isFinite))
+        .sort((a, b) => a.t - b.t);
+      if (rows.length > 1) m.ref = rows;
+    } catch (e) { /* không có tham chiếu thì bỏ qua */ }
+  }));
+}
+
+// Cắt dải tham chiếu về đúng khoảng trục x, nội suy tuyến tính ở hai đầu
+function refSlice(ref, lo, hi) {
+  const interp = t => {
+    for (let i = 0; i < ref.length - 1; i++) {
+      const a = ref[i], b = ref[i + 1];
+      if (t >= a.t && t <= b.t) {
+        const k = (t - a.t) / (b.t - a.t);
+        return { t, lo: a.lo + k * (b.lo - a.lo), mid: a.mid + k * (b.mid - a.mid), hi: a.hi + k * (b.hi - a.hi) };
+      }
+    }
+    return null;
+  };
+  const pts = [];
+  const s = interp(lo); if (s) pts.push(s);
+  for (const r of ref) if (r.t > lo && r.t < hi) pts.push(r);
+  const e = interp(hi); if (e) pts.push(e);
+  return pts.length > 1 ? pts : null;
+}
+
 function loadFromFileList(fileList) {
   const files = [...fileList].filter(f => /\.txt$/i.test(f.name) && f.name.toLowerCase() !== "manifest.txt");
   return Promise.all(files.map(f => f.text().then(text => parseMetricFile(f.name, text))));
@@ -378,6 +463,9 @@ function niceTicks(min, max, count) {
 
 function xDomain() {
   const ts = metrics.flatMap(m => m.points.map(p => p.t));
+  // Kéo trục tới "hôm nay" nếu mốc đó ở gần sau lần khám cuối (≤ 3 tuần)
+  if (pregInfo && timeKind === "week" && pregInfo.todayWeek <= Math.max(...ts) + 3)
+    ts.push(pregInfo.todayWeek);
   let lo = Math.min(...ts), hi = Math.max(...ts);
   if (lo === hi) { lo -= 1; hi += 1; }
   const pad = (hi - lo) * 0.04;
@@ -452,7 +540,9 @@ function renderCharts() {
     const svg = el("svg", { viewBox: `0 0 ${width} ${panelH}`, role: "img" });
     svg.setAttribute("aria-label", `${m.name} (${m.unit}) theo ${timeKind === "week" ? "tuần thai" : "ngày khám"}`);
 
+    const band = timeKind === "week" && m.ref ? refSlice(m.ref, dom.lo, dom.hi) : null;
     const vals = m.points.map(p => p.value);
+    if (band) vals.push(...band.map(r => r.lo), ...band.map(r => r.hi));
     const vmin = Math.min(...vals), vmax = Math.max(...vals);
     const vpad = (vmax - vmin || Math.abs(vmax) || 1) * 0.12;
     const { lo: ylo, hi: yhi, ticks: yticks } = niceTicks(vmin - vpad, vmax + vpad, 4);
@@ -487,6 +577,25 @@ function renderCharts() {
     }
 
     const color = getComputedStyle(document.documentElement).getPropertyValue(`--series-${m.slot || 1}`).trim() || "#898781";
+
+    // Dải tham chiếu p5–p95 (vùng mờ) + đường trung vị mảnh, vẽ dưới đường dữ liệu
+    if (band) {
+      const top = band.map(r => `${sx(r.t)},${sy(r.hi)}`);
+      const bot = band.slice().reverse().map(r => `${sx(r.t)},${sy(r.lo)}`);
+      el("polygon", { points: top.concat(bot).join(" "), fill: color, "fill-opacity": 0.09 }, svg);
+      el("polyline", {
+        points: band.map(r => `${sx(r.t)},${sy(r.mid)}`).join(" "),
+        fill: "none", stroke: color, "stroke-opacity": 0.35, "stroke-width": 1
+      }, svg);
+    }
+
+    // Vạch "hôm nay" theo tuổi thai hiện tại
+    if (pregInfo && timeKind === "week" && pregInfo.todayWeek >= dom.lo && pregInfo.todayWeek <= dom.hi) {
+      const tx = sx(pregInfo.todayWeek);
+      el("line", { x1: tx, x2: tx, y1: M.top, y2: baseY, stroke: "var(--text-muted)", "stroke-width": 1, "stroke-opacity": 0.5 }, svg);
+      const t = el("text", { x: tx + 4, y: M.top + 9 }, svg);
+      t.textContent = "hôm nay";
+    }
 
     // Đường 2px + chấm ≥8px viền màu nền
     if (m.points.length > 1) {
@@ -558,15 +667,25 @@ function onHover(t, cx, cy) {
   tip.appendChild(head);
   for (const m of metrics) {
     if (hidden.has(m.file)) continue;
-    const p = m.points.find(p => p.t === snapped);
-    if (!p) continue;
+    const idx = m.points.findIndex(p => p.t === snapped);
+    if (idx < 0) continue;
+    const p = m.points[idx];
     const row = document.createElement("div"); row.className = "tt-row";
     row.style.setProperty("--c", `var(--series-${m.slot || 1})`);
     const key = document.createElement("span"); key.className = "tt-key";
     const val = document.createElement("span"); val.className = "tt-val";
     val.textContent = `${nf.format(p.value)} ${m.unit}`;
+    row.append(key, val);
+    if (idx > 0) { // chênh lệch so với lần khám trước
+      const diff = p.value - m.points[idx - 1].value;
+      if (diff !== 0) {
+        const d = document.createElement("span"); d.className = "tt-delta";
+        d.textContent = `${diff > 0 ? "+" : "−"}${nf.format(Math.abs(diff))}`;
+        row.appendChild(d);
+      }
+    }
     const name = document.createElement("span"); name.className = "tt-name"; name.textContent = m.name;
-    row.append(key, val, name);
+    row.appendChild(name);
     tip.appendChild(row);
   }
   tip.style.display = "block";
@@ -659,10 +778,22 @@ function renderTable() {
 function showNotice(html) { const n = $("notice"); n.hidden = false; n.textContent = ""; n.append(html); }
 function hideNotice() { $("notice").hidden = true; }
 
+function updateStatus() {
+  const s = $("status");
+  if (!pregInfo) { s.hidden = true; return; }
+  const w = weekLabel(pregInfo.todayWeek);
+  s.textContent = pregInfo.daysLeft > 0
+    ? `Hôm nay bé được ${w} tuần · còn ${pregInfo.daysLeft} ngày tới dự sinh ${displayTime(pregInfo.edd, "date")} 🤰`
+    : `Đã tới ngày dự sinh ${displayTime(pregInfo.edd, "date")} 🎉`;
+  s.hidden = false;
+}
+
 function renderAll(errors) {
   renderToggles();
   renderCharts();
   renderTable();
+  updateStatus();
+  $("refNote").hidden = !metrics.some(m => m.ref);
   if (errors && errors.length) {
     const frag = document.createDocumentFragment();
     const s = document.createElement("strong"); s.textContent = "Một số dòng bị bỏ qua: ";
@@ -684,8 +815,11 @@ function showPicker(reason) {
   btn.addEventListener("click", () => input.click());
   input.addEventListener("change", async () => {
     const results = await loadFromFileList(input.files);
-    if (results.length) renderAll(ingest(results));
-    else showNotice(document.createTextNode("Thư mục đã chọn không có file .txt nào."));
+    if (results.length) {
+      const errors = ingest(results);
+      await loadRefs();
+      renderAll(errors);
+    } else showNotice(document.createTextNode("Thư mục đã chọn không có file .txt nào."));
   });
   picker.append(btn, input);
   frag.append(p, picker);
@@ -694,14 +828,18 @@ function showPicker(reason) {
 
 async function boot() {
   hideNotice();
-  const results = await loadFromServer();
+  const [results] = await Promise.all([loadFromServer(), loadConfig()]);
+  pregInfo = pregnancyInfo();
+  updateStatus();
   if (results === null) { showPicker(); return; }
   if (!results.length) {
     showNotice(document.createTextNode("Thư mục data/ chưa có file .txt nào. Thêm file rồi bấm “Tải lại dữ liệu”."));
     $("controls").hidden = false;
     return;
   }
-  renderAll(ingest(results));
+  const errors = ingest(results);
+  await loadRefs();
+  renderAll(errors);
 }
 
 $("reload").addEventListener("click", boot);

@@ -65,6 +65,29 @@ can-nang.txt
 nhip-tim.txt
 ```
 
+## Ngày dự sinh & vạch "hôm nay"
+
+Khai báo trong `config.txt` (cạnh `index.html`) một trong hai dòng:
+
+```
+du-sinh: 12/12/2026
+kinh-cuoi: 07/03/2026
+```
+
+Trang sẽ hiện dòng "Hôm nay bé được 22w5 tuần · còn N ngày tới dự sinh" và vẽ
+vạch **hôm nay** trên các biểu đồ (khi mốc hôm nay ở gần sau lần khám cuối).
+
+## Khoảng tham chiếu
+
+Nếu tồn tại file `refs/<cùng tên file trong data/>`, biểu đồ chỉ số đó sẽ có
+vùng mờ p5–p95 và đường trung vị phía sau đường đo. Format mỗi dòng:
+`tuần <tab> p5 <tab> p50 <tab> p95` (dòng tiêu đề tùy chọn).
+
+> ⚠️ Số liệu trong `refs/` đi kèm repo là giá trị **xấp xỉ** tổng hợp từ các
+> bảng tăng trưởng thông dụng (Hadlock, WHO), chỉ để tham khảo hình dạng đường
+> cong. Hãy thay bằng bảng chuẩn mà phòng khám/bác sĩ của bạn sử dụng, và mọi
+> kết luận về sức khỏe của bé luôn theo bác sĩ.
+
 ## Tính năng
 
 - Tick bật/tắt từng chỉ số (trạng thái được nhớ lại giữa các lần mở).
