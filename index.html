@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theo dõi thai kỳ</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:           #f9f9f7;
+    --surface:        #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --axis:           #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+    --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface:        #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --axis:           #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+      --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 24px 20px 48px; }
+  header h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  header p  { margin: 2px 0 0; color: var(--text-secondary); }
+
+  /* Hàng điều khiển: checkbox từng chỉ số */
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    margin: 18px 0 14px;
+  }
+  .metric-toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 12px 5px 9px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .metric-toggle input { accent-color: var(--text-secondary); margin: 0; }
+  .metric-toggle .swatch {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--c); flex: none;
+  }
+  .metric-toggle .unit { color: var(--text-muted); }
+  .metric-toggle:has(input:not(:checked)) { opacity: .55; }
+  .controls .spacer { flex: 1; }
+  .controls button, .picker button {
+    font: inherit; color: var(--text-secondary);
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 5px 12px; cursor: pointer;
+  }
+  .controls button:hover, .picker button:hover { color: var(--text-primary); }
+
+  .notice {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin: 14px 0;
+    color: var(--text-secondary);
+  }
+  .notice strong { color: var(--text-primary); }
+  .picker { margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* Lưới các panel biểu đồ (small multiples) */
+  .charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 760px) { .charts { grid-template-columns: 1fr 1fr; } }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 14px 8px;
+  }
+  .panel h2 {
+    font-size: 14px; font-weight: 600; margin: 0 0 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel h2 .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+  .panel h2 .unit { color: var(--text-muted); font-weight: 400; }
+  .panel svg { display: block; width: 100%; touch-action: none; }
+
+  svg text { font-family: inherit; font-size: 11px; fill: var(--text-muted); }
+  svg .endlabel { fill: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+  svg .gridline { stroke: var(--grid); stroke-width: 1; }
+  svg .baseline { stroke: var(--axis); stroke-width: 1; }
+  svg .crosshair { stroke: var(--axis); stroke-width: 1; pointer-events: none; }
+
+  /* Tooltip chung */
+  #tooltip {
+    position: fixed; z-index: 10; pointer-events: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    min-width: 150px; display: none;
+  }
+  #tooltip .tt-head { color: var(--text-muted); margin-bottom: 4px; }
+  #tooltip .tt-row { display: flex; align-items: center; gap: 8px; padding: 1px 0; }
+  #tooltip .tt-key { width: 14px; height: 0; border-top: 2.5px solid var(--c); border-radius: 2px; flex: none; }
+  #tooltip .tt-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  #tooltip .tt-name { color: var(--text-secondary); }
+
+  /* Bảng số liệu */
+  details.table-view { margin-top: 22px; }
+  details.table-view summary {
+    cursor: pointer; color: var(--text-secondary); font-weight: 600;
+    user-select: none; width: fit-content;
+  }
+  .table-scroll { overflow-x: auto; margin-top: 10px; }
+  table {
+    border-collapse: collapse; width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  th, td { padding: 7px 12px; text-align: right; white-space: nowrap; }
+  th { color: var(--text-secondary); font-weight: 600; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  td { font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  tr:last-child td { border-bottom: none; }
+  td.empty { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Theo dõi thai kỳ</h1>
+    <p>Chỉ số siêu âm qua từng mốc khám — tick để bật/tắt từng chỉ số.</p>
+  </header>
+
+  <div class="controls" id="controls" hidden>
+    <div id="toggles" style="display:contents"></div>
+    <span class="spacer"></span>
+    <button id="reload" type="button">Tải lại dữ liệu</button>
+  </div>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="charts" id="charts"></div>
+
+  <details class="table-view" id="tableView" hidden>
+    <summary>Bảng số liệu</summary>
+    <div class="table-scroll"><table id="dataTable"></table></div>
+  </details>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+"use strict";
+(() => {
+const N_SLOTS = 8;
+const STORE_KEY = "baby-monitor-hidden";
+
+// Chỉ cần khi dùng GitHub Pages với custom domain, hoặc khi trang không nằm ở gốc
+// repo. Bình thường để trống — trang tự suy ra owner/repo từ URL *.github.io.
+const GITHUB_REPO = "";   // ví dụ: "haicm/baby_monitor"
+const DATA_PATH   = "data"; // đường dẫn thư mục data bên trong repo
+
+/** @type {{file:string,name:string,unit:string,slot:number,points:{t:number,display:string,value:number}[]}[]} */
+let metrics = [];
+let timeKind = null;          // 'week' | 'date'
+let hidden = new Set(JSON.parse(localStorage.getItem(STORE_KEY) || "[]"));
+
+const $ = id => document.getElementById(id);
+const nf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
+
+/* ---------- Đọc & phân tích dữ liệu ---------- */
+
+function splitCols(line) {
+  let parts = line.split(/\t+/).map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) parts = line.trim().split(/ {2,}/).map(s => s.trim()).filter(Boolean);
+  return parts;
+}
+
+function parseNumber(s) {
+  s = s.trim();
+  if (/^-?\d+,\d+$/.test(s)) s = s.replace(",", ".");
+  const v = parseFloat(s);
+  return Number.isFinite(v) ? v : NaN;
+}
+
+// Mốc thời gian: tuần thai ("12", "12.5", "12w3d") hoặc ngày ("2026-08-13", "13/08/2026")
+function parseTime(s) {
+  s = s.trim();
+  let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)))
+    return { kind: "date", t: new Date(+m[1], m[2] - 1, +m[3]).getTime() };
+  if ((m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/)))
+    return { kind: "date", t: new Date(+m[3], m[2] - 1, +m[1]).getTime() };
+  if ((m = s.match(/^(\d+(?:[.,]\d+)?)$/)))
+    return { kind: "week", t: parseFloat(m[1].replace(",", ".")) };
+  if ((m = s.match(/^(\d+)\s*w\s*(\d+)?\s*d?$/i)))
+    return { kind: "week", t: +m[1] + (m[2] ? +m[2] / 7 : 0) };
+  if ((m = s.match(/^tu[aâầ]n\s*(\d+(?:[.,]\d+)?)$/i)))
+    return { kind: "week", t: parseFloat(m[1].replace(",", ".")) };
+  return null;
+}
+
+function displayTime(t, kind) {
+  if (kind === "date") {
+    const d = new Date(t);
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  }
+  return `Tuần ${nf.format(t)}`;
+}
+
+function parseMetricFile(file, text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+  if (!lines.length) return { error: `${file}: file rỗng` };
+  const head = splitCols(lines[0]);
+  if (head.length < 2) return { error: `${file}: dòng đầu phải có "tên chỉ số<TAB>đơn vị"` };
+  const [name, unit] = head;
+  const points = [], bad = [];
+  for (const line of lines.slice(1)) {
+    const cols = splitCols(line);
+    if (cols.length < 2) { bad.push(line); continue; }
+    const time = parseTime(cols[0]);
+    const value = parseNumber(cols[1]);
+    if (!time || !Number.isFinite(value)) { bad.push(line); continue; }
+    points.push({ ...time, value });
+  }
+  return { file, name, unit, points, bad };
+}
+
+/* ---------- Nạp danh sách file trong data/ ---------- */
+
+async function listDataFiles() {
+  // 1) Autoindex của http server (python3 -m http.server, nginx autoindex…)
+  try {
+    const res = await fetch("data/", { cache: "no-store" });
+    if (res.ok) {
+      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      const names = [...doc.querySelectorAll("a[href]")]
+        .map(a => decodeURIComponent(a.getAttribute("href").split("/").pop().split("?")[0]))
+        .filter(n => /\.txt$/i.test(n) && n.toLowerCase() !== "manifest.txt");
+      if (names.length) return [...new Set(names)];
+    }
+  } catch (e) { /* thử cách tiếp theo */ }
+  // 2) GitHub Pages: liệt kê thư mục data/ của repo qua GitHub API
+  try {
+    const names = await listFromGitHubAPI();
+    if (names && names.length) return names;
+  } catch (e) { /* thử cách tiếp theo */ }
+  // 3) Manifest thủ công: data/manifest.txt, mỗi dòng một tên file
+  try {
+    const res = await fetch("data/manifest.txt", { cache: "no-store" });
+    if (res.ok) {
+      const names = (await res.text()).split(/\r?\n/).map(s => s.trim())
+        .filter(n => n && !n.startsWith("#"));
+      if (names.length) return names;
+    }
+  } catch (e) { /* hết cách qua mạng */ }
+  return null;
+}
+
+// Suy ra owner/repo từ URL GitHub Pages (user.github.io/repo) rồi hỏi GitHub API
+// danh sách file trong thư mục data/. Repo phải public; file dữ liệu vẫn được tải
+// qua đường dẫn tương đối của chính trang Pages.
+async function listFromGitHubAPI() {
+  let owner, repo;
+  if (GITHUB_REPO) {
+    [owner, repo] = GITHUB_REPO.split("/");
+  } else {
+    const host = location.hostname;
+    if (!host.endsWith(".github.io")) return null;
+    owner = host.split(".")[0];
+    const seg = location.pathname.split("/").filter(Boolean);
+    // Trang project: user.github.io/repo/… — trang user: repo tên user.github.io
+    repo = seg.length && !seg[0].endsWith(".html") ? seg[0] : `${owner}.github.io`;
+  }
+  if (!owner || !repo) return null;
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${DATA_PATH}`,
+    { cache: "no-store", headers: { Accept: "application/vnd.github+json" } }
+  );
+  if (!res.ok) return null;
+  const items = await res.json();
+  if (!Array.isArray(items)) return null;
+  return items
+    .filter(it => it.type === "file" && /\.txt$/i.test(it.name) && it.name.toLowerCase() !== "manifest.txt")
+    .map(it => it.name);
+}
+
+async function loadFromServer() {
+  const names = await listDataFiles();
+  if (!names) return null;
+  const results = await Promise.all(names.map(async n => {
+    try {
+      const res = await fetch("data/" + encodeURIComponent(n), { cache: "no-store" });
+      if (!res.ok) return { error: `${n}: HTTP ${res.status}` };
+      return parseMetricFile(n, await res.text());
+    } catch (e) { return { error: `${n}: ${e.message}` }; }
+  }));
+  return results;
+}
+
+function loadFromFileList(fileList) {
+  const files = [...fileList].filter(f => /\.txt$/i.test(f.name) && f.name.toLowerCase() !== "manifest.txt");
+  return Promise.all(files.map(f => f.text().then(text => parseMetricFile(f.name, text))));
+}
+
+function ingest(results) {
+  const errors = results.filter(r => r.error).map(r => r.error);
+  let parsed = results.filter(r => !r.error && r.points.length);
+  parsed.sort((a, b) => a.file.localeCompare(b.file, "vi"));
+
+  // Thống nhất kiểu mốc thời gian (tuần hoặc ngày) — lấy theo đa số
+  const kinds = parsed.flatMap(m => m.points.map(p => p.kind));
+  const nWeek = kinds.filter(k => k === "week").length;
+  timeKind = nWeek >= kinds.length - nWeek ? "week" : "date";
+  for (const m of parsed) {
+    const dropped = m.points.filter(p => p.kind !== timeKind);
+    if (dropped.length) errors.push(`${m.file}: bỏ qua ${dropped.length} dòng có mốc thời gian khác kiểu (${timeKind === "week" ? "tuần" : "ngày"})`);
+    m.points = m.points.filter(p => p.kind === timeKind)
+      .map(p => ({ t: p.t, value: p.value, display: displayTime(p.t, timeKind) }))
+      .sort((a, b) => a.t - b.t);
+    if (m.bad.length) errors.push(`${m.file}: bỏ qua ${m.bad.length} dòng không đọc được`);
+  }
+  parsed = parsed.filter(m => m.points.length);
+  parsed.forEach((m, i) => { m.slot = i < N_SLOTS ? i + 1 : 0; });
+  metrics = parsed;
+  return errors;
+}
+
+/* ---------- Thang đo & vẽ ---------- */
+
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const span = max - min;
+  const step0 = span / Math.max(1, count);
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  const step = (norm >= 5 ? 10 : norm >= 2 ? 5 : norm >= 1 ? 2 : 1) * mag;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(+v.toPrecision(12));
+  return { lo, hi, ticks };
+}
+
+function xDomain() {
+  const ts = metrics.flatMap(m => m.points.map(p => p.t));
+  let lo = Math.min(...ts), hi = Math.max(...ts);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.04;
+  return { lo: lo - pad, hi: hi + pad };
+}
+
+function xTicks(dom) {
+  if (timeKind === "week") {
+    return niceTicks(dom.lo, dom.hi, 6).ticks
+      .filter(v => v >= dom.lo && v <= dom.hi)
+      .map(v => ({ t: v, label: nf.format(v) }));
+  }
+  const DAY = 864e5;
+  const span = dom.hi - dom.lo;
+  const stepDays = [1, 2, 7, 14, 30, 60, 90].find(d => span / (d * DAY) <= 7) || 180;
+  const ticks = [];
+  let d = new Date(dom.lo); d.setHours(0, 0, 0, 0);
+  for (let t = d.getTime(); t <= dom.hi; t += stepDays * DAY) {
+    if (t < dom.lo) continue;
+    const dt = new Date(t);
+    ticks.push({ t, label: `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}` });
+  }
+  return ticks;
+}
+
+const svgNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const node = document.createElementNS(svgNS, tag);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const M = { top: 10, right: 52, bottom: 26, left: 50 };
+const PANEL_H = 190;
+let panelState = []; // {metric, svg, sx, points, crosshair, dots}
+
+function renderCharts() {
+  const chartsBox = $("charts");
+  chartsBox.textContent = "";
+  panelState = [];
+  const visible = metrics.filter(m => !hidden.has(m.file));
+  if (!metrics.length) return;
+  if (!visible.length) {
+    const d = document.createElement("div");
+    d.className = "notice";
+    d.textContent = "Chưa chọn chỉ số nào — tick vào một chỉ số phía trên để vẽ biểu đồ.";
+    chartsBox.appendChild(d);
+    return;
+  }
+
+  const dom = xDomain();
+  const xt = xTicks(dom);
+  const width = Math.max(300, (chartsBox.clientWidth - (chartsBox.clientWidth >= 720 ? 16 : 0)) / (chartsBox.clientWidth >= 720 ? 2 : 1));
+  const plotW = width - M.left - M.right;
+  const plotH = PANEL_H - M.top - M.bottom;
+  const sx = t => M.left + (t - dom.lo) / (dom.hi - dom.lo) * plotW;
+
+  for (const m of visible) {
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.style.setProperty("--c", `var(--series-${m.slot || 1})`);
+
+    const h2 = document.createElement("h2");
+    const sw = document.createElement("span"); sw.className = "swatch";
+    const nm = document.createElement("span"); nm.textContent = m.name;
+    const un = document.createElement("span"); un.className = "unit"; un.textContent = `(${m.unit})`;
+    h2.append(sw, nm, un);
+    panel.appendChild(h2);
+
+    const svg = el("svg", { viewBox: `0 0 ${width} ${PANEL_H}`, role: "img" });
+    svg.setAttribute("aria-label", `${m.name} (${m.unit}) theo ${timeKind === "week" ? "tuần thai" : "ngày khám"}`);
+
+    const vals = m.points.map(p => p.value);
+    const vmin = Math.min(...vals), vmax = Math.max(...vals);
+    const vpad = (vmax - vmin || Math.abs(vmax) || 1) * 0.12;
+    const { lo: ylo, hi: yhi, ticks: yticks } = niceTicks(vmin - vpad, vmax + vpad, 4);
+    const sy = v => M.top + (yhi - v) / (yhi - ylo) * plotH;
+
+    // Lưới ngang + nhãn trục y
+    for (const v of yticks) {
+      el("line", { class: "gridline", x1: M.left, x2: width - M.right, y1: sy(v), y2: sy(v) }, svg);
+      const t = el("text", { x: M.left - 8, y: sy(v) + 3.5, "text-anchor": "end" }, svg);
+      t.textContent = nf.format(v);
+    }
+    // Trục hoành + nhãn mốc thời gian
+    el("line", { class: "baseline", x1: M.left, x2: width - M.right, y1: PANEL_H - M.bottom, y2: PANEL_H - M.bottom }, svg);
+    for (const tk of xt) {
+      const t = el("text", { x: sx(tk.t), y: PANEL_H - M.bottom + 16, "text-anchor": "middle" }, svg);
+      t.textContent = tk.label;
+    }
+
+    const color = getComputedStyle(document.documentElement).getPropertyValue(`--series-${m.slot || 1}`).trim() || "#898781";
+
+    // Đường 2px + chấm ≥8px viền màu nền
+    if (m.points.length > 1) {
+      const dAttr = m.points.map((p, i) => `${i ? "L" : "M"}${sx(p.t)},${sy(p.value)}`).join("");
+      el("path", { d: dAttr, fill: "none", stroke: color, "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round" }, svg);
+    }
+    const dots = m.points.map(p =>
+      el("circle", { cx: sx(p.t), cy: sy(p.value), r: 4.5, fill: color, stroke: "var(--surface)", "stroke-width": 2 }, svg));
+
+    // Nhãn trực tiếp ở điểm cuối
+    const last = m.points[m.points.length - 1];
+    const lbl = el("text", { class: "endlabel", x: sx(last.t) + 9, y: sy(last.value) + 4 }, svg);
+    lbl.textContent = nf.format(last.value);
+
+    const crosshair = el("line", { class: "crosshair", y1: M.top, y2: PANEL_H - M.bottom, visibility: "hidden" }, svg);
+
+    // Lớp bắt hover phủ toàn vùng vẽ
+    const hit = el("rect", { x: 0, y: 0, width, height: PANEL_H, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", e => {
+      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const t = dom.lo + (loc.x - M.left) / plotW * (dom.hi - dom.lo);
+      onHover(t, e.clientX, e.clientY);
+    });
+    hit.addEventListener("pointerleave", clearHover);
+
+    panel.appendChild(svg);
+    chartsBox.appendChild(panel);
+    panelState.push({ metric: m, sx, crosshair, dots });
+  }
+}
+
+/* ---------- Crosshair đồng bộ + tooltip chung ---------- */
+
+function unionTimes() {
+  return [...new Set(metrics.filter(m => !hidden.has(m.file)).flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
+}
+
+function onHover(t, cx, cy) {
+  const times = unionTimes();
+  if (!times.length) return;
+  const snapped = times.reduce((best, v) => Math.abs(v - t) < Math.abs(best - t) ? v : best, times[0]);
+
+  for (const ps of panelState) {
+    const x = ps.sx(snapped);
+    ps.crosshair.setAttribute("x1", x);
+    ps.crosshair.setAttribute("x2", x);
+    ps.crosshair.setAttribute("visibility", "visible");
+    ps.metric.points.forEach((p, i) => ps.dots[i].setAttribute("r", p.t === snapped ? 6 : 4.5));
+  }
+
+  const tip = $("tooltip");
+  tip.textContent = "";
+  const head = document.createElement("div");
+  head.className = "tt-head";
+  head.textContent = displayTime(snapped, timeKind);
+  tip.appendChild(head);
+  for (const m of metrics) {
+    if (hidden.has(m.file)) continue;
+    const p = m.points.find(p => p.t === snapped);
+    if (!p) continue;
+    const row = document.createElement("div"); row.className = "tt-row";
+    row.style.setProperty("--c", `var(--series-${m.slot || 1})`);
+    const key = document.createElement("span"); key.className = "tt-key";
+    const val = document.createElement("span"); val.className = "tt-val";
+    val.textContent = `${nf.format(p.value)} ${m.unit}`;
+    const name = document.createElement("span"); name.className = "tt-name"; name.textContent = m.name;
+    row.append(key, val, name);
+    tip.appendChild(row);
+  }
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let x = cx + 16, y = cy + 16;
+  if (x + r.width > innerWidth - 8) x = cx - r.width - 16;
+  if (y + r.height > innerHeight - 8) y = cy - r.height - 16;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+
+function clearHover() {
+  $("tooltip").style.display = "none";
+  for (const ps of panelState) {
+    ps.crosshair.setAttribute("visibility", "hidden");
+    ps.dots.forEach(d => d.setAttribute("r", 4.5));
+  }
+}
+
+/* ---------- Checkbox + bảng số liệu ---------- */
+
+function renderToggles() {
+  const box = $("toggles");
+  box.textContent = "";
+  for (const m of metrics) {
+    const label = document.createElement("label");
+    label.className = "metric-toggle";
+    label.style.setProperty("--c", `var(--series-${m.slot || 1})`);
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !hidden.has(m.file);
+    cb.addEventListener("change", () => {
+      cb.checked ? hidden.delete(m.file) : hidden.add(m.file);
+      localStorage.setItem(STORE_KEY, JSON.stringify([...hidden]));
+      renderCharts();
+    });
+    const sw = document.createElement("span"); sw.className = "swatch";
+    const nm = document.createElement("span"); nm.textContent = m.name;
+    const un = document.createElement("span"); un.className = "unit"; un.textContent = m.unit;
+    label.append(cb, sw, nm, un);
+    box.appendChild(label);
+  }
+  $("controls").hidden = !metrics.length;
+}
+
+function renderTable() {
+  const table = $("dataTable");
+  table.textContent = "";
+  if (!metrics.length) { $("tableView").hidden = true; return; }
+  $("tableView").hidden = false;
+
+  const times = [...new Set(metrics.flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
+  const thead = table.createTHead().insertRow();
+  const th0 = document.createElement("th");
+  th0.textContent = timeKind === "week" ? "Tuần thai" : "Ngày khám";
+  thead.appendChild(th0);
+  for (const m of metrics) {
+    const th = document.createElement("th");
+    th.textContent = `${m.name} (${m.unit})`;
+    thead.appendChild(th);
+  }
+  const tbody = table.createTBody();
+  for (const t of times) {
+    const tr = tbody.insertRow();
+    const td0 = tr.insertCell();
+    td0.textContent = displayTime(t, timeKind);
+    for (const m of metrics) {
+      const p = m.points.find(p => p.t === t);
+      const td = tr.insertCell();
+      if (p) td.textContent = nf.format(p.value);
+      else { td.textContent = "–"; td.className = "empty"; }
+    }
+  }
+}
+
+/* ---------- Khởi động ---------- */
+
+function showNotice(html) { const n = $("notice"); n.hidden = false; n.textContent = ""; n.append(html); }
+function hideNotice() { $("notice").hidden = true; }
+
+function renderAll(errors) {
+  renderToggles();
+  renderCharts();
+  renderTable();
+  if (errors && errors.length) {
+    const frag = document.createDocumentFragment();
+    const s = document.createElement("strong"); s.textContent = "Một số dòng bị bỏ qua: ";
+    frag.append(s, errors.join(" · "));
+    showNotice(frag);
+  } else hideNotice();
+}
+
+function showPicker(reason) {
+  const frag = document.createDocumentFragment();
+  const p = document.createElement("div");
+  const s = document.createElement("strong"); s.textContent = "Không đọc được thư mục data/ qua mạng. ";
+  p.append(s, reason || "Hãy chạy một web server tĩnh (ví dụ: python3 -m http.server) rồi mở lại trang, hoặc chọn thư mục data trực tiếp:");
+  const picker = document.createElement("div"); picker.className = "picker";
+  const btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Chọn thư mục data…";
+  const input = document.createElement("input");
+  input.type = "file"; input.multiple = true; input.hidden = true;
+  input.setAttribute("webkitdirectory", "");
+  btn.addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const results = await loadFromFileList(input.files);
+    if (results.length) renderAll(ingest(results));
+    else showNotice(document.createTextNode("Thư mục đã chọn không có file .txt nào."));
+  });
+  picker.append(btn, input);
+  frag.append(p, picker);
+  showNotice(frag);
+}
+
+async function boot() {
+  hideNotice();
+  const results = await loadFromServer();
+  if (results === null) { showPicker(); return; }
+  if (!results.length) {
+    showNotice(document.createTextNode("Thư mục data/ chưa có file .txt nào. Thêm file rồi bấm “Tải lại dữ liệu”."));
+    $("controls").hidden = false;
+    return;
+  }
+  renderAll(ingest(results));
+}
+
+$("reload").addEventListener("click", boot);
+let resizeTimer;
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderCharts, 120); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderCharts);
+boot();
+})();
+</script>
+</body>
+</html>
