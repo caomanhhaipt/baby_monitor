@@ -1,4 +1,4 @@
 # Cấu hình trang theo dõi thai kỳ.
 # Khai một trong hai dòng dưới (du-sinh được ưu tiên nếu có cả hai):
-du-sinh: 12/12/2026
-# kinh-cuoi: 07/03/2026
+du-sinh: 14/11/2026
+# kinh-cuoi: 07/02/2026

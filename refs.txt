@@ -1,15 +1,27 @@
-# NGUỒN SỐ LIỆU (các dòng chú thích này không được web đọc thành chỉ số)
-# - Cân nặng ước tính, BPD, FL: WHO Fetal Growth Charts (Kiserud et al 2017,
-#   PLoS Medicine 14(1):e1002220, bảng phụ lục S7) — percentile p10/p50/p90.
-# - CRL: INTERGROWTH-21st (Papageorghiou et al 2014, Ultrasound Obstet Gynecol
-#   44:641-8) — centile 10th/50th/90th.
-# - Nhịp tim thai: KHÔNG phải percentile chặt chẽ — là khoảng bình thường tổng
-#   hợp từ tài liệu lâm sàng (điểm giữa là ước lượng trung vị); tham khảo
-#   Pildner von Steinburg 2013 (PeerJ 1:e82): tuần 21-42 khoảng 110-160 bpm
-#   tương ứng percentile ~0.6-96, trung vị giảm ~0.4 bpm/tuần.
-# Format mỗi mục: tuần <tab> p10 <tab> p50 <tab> p90
+# KHOẢNG THAM CHIẾU — tên mục phải TRÙNG tên cột trong data/kham-thai.csv
+# (phần đơn vị trong ngoặc ở cuối tên cột được bỏ đi khi so khớp).
+# Format mỗi mục:  tuần <tab> p10 <tab> p50 <tab> p90 ; giữa các tuần trang tự nội suy.
+#
+# NGUỒN:
+# - Cân nặng, BPD, HC, AC, FL, HL: WHO Fetal Growth Charts (Kiserud et al 2017,
+#   PLoS Medicine 14(1):e1002220, bảng phụ lục) — percentile p10/p50/p90, tuần 14-40.
+# - CRL: INTERGROWTH-21st (Papageorghiou et al 2014, Ultrasound Obstet Gynecol 44:641-8).
+# - Chu kỳ tim: KHÔNG phải percentile — khoảng bình thường tổng hợp từ tài liệu lâm sàng
+#   (tham khảo Pildner von Steinburg 2013, PeerJ 1:e82: tuần 21-42 khoảng 110-160 bpm,
+#   trung vị giảm ~0,4 bpm mỗi tuần). Chỉ mang tính định hướng.
+#
+# CÁC CHỈ SỐ CHƯA CÓ VÙNG THAM CHIẾU (thêm mục mới theo đúng mẫu là trang tự vẽ):
+# - Chiều dài cổ tử cung: ngưỡng lâm sàng là một mốc cố định (<25 mm = nguy cơ sinh non), không phải dải percentile theo tuần; Iams 1996 chỉ cho phân bố tại tuần 24 và 28.
+# - Chiều dài bàn chân: chưa tìm được bảng percentile đủ tin cậy.
+# - Chiều dài xương mũi – NBL: các bảng hiện có phụ thuộc mạnh vào chủng tộc/quần thể, chưa có bảng chuẩn dùng chung.
+# - Đường kính ngoài 2 hốc mắt: chưa tìm được bảng percentile đủ tin cậy.
+# - Tiểu não: có tương quan tuyến tính rất chặt với tuổi thai (mẹo lâm sàng: tuần 14-24 thì TCD tính bằng mm xấp xỉ số tuần), nhưng chưa lấy được bảng percentile theo tuần.
+# - Độ trưởng thành bánh rau: là phân độ Grannum 0-III, không phải số đo liên tục nên không có percentile.
+# - Nước ối: ngưỡng lâm sàng cố định (khoang ối sâu nhất bình thường 20-80 mm), không phải dải theo tuần.
+# - Doppler động mạch rốn – PI: bảng chuẩn FMF (Ciobanu 2019) không tải được tự động; nếu cần, lấy bảng percentile PI từ bác sĩ rồi thêm mục theo mẫu bên dưới.
 
-# Cân nặng ước tính
+# nguồn: WHO Fetal Growth Charts — EFW (Kiserud 2017)
+# Cân nặng
 tuần	p10	p50	p90
 14	78	90	104
 15	99	114	132
@@ -39,7 +51,20 @@ tuần	p10	p50	p90
 39	2905	3403	3897
 40	3084	3617	4135
 
-# Đường kính lưỡng đỉnh (BPD)
+# nguồn: INTERGROWTH-21st — CRL (Papageorghiou 2014)
+# Chiều dài đầu mông – CRL
+tuần	p10	p50	p90
+8w2	12.3	14.6	17.0
+9	19.3	21.9	24.6
+10	29.5	32.6	35.8
+11	40.2	43.8	47.5
+12	51.5	55.6	59.7
+13	63.3	67.8	72.4
+14	75.6	80.6	85.7
+15	88.5	93.9	99.4
+
+# nguồn: WHO Fetal Growth Charts — BPD
+# Đường kính lưỡng đỉnh – BPD
 tuần	p10	p50	p90
 14	24	27	29
 15	27	30	32
@@ -69,7 +94,70 @@ tuần	p10	p50	p90
 39	89	94	99
 40	90	96	100
 
-# Chiều dài xương đùi (FL)
+# nguồn: WHO Fetal Growth Charts — HC
+# Chu vi đầu - HC
+tuần	p10	p50	p90
+14	91	100	107
+15	102	111	119
+16	114	123	132
+17	126	135	144
+18	138	148	157
+19	150	161	170
+20	163	173	183
+21	175	186	196
+22	187	198	209
+23	199	210	221
+24	211	222	233
+25	222	233	245
+26	232	244	256
+27	242	254	267
+28	251	264	277
+29	260	273	286
+30	268	281	295
+31	275	289	303
+32	282	296	311
+33	289	303	318
+34	295	309	324
+35	300	315	330
+36	306	321	336
+37	311	326	341
+38	315	332	347
+39	320	337	352
+40	325	342	357
+
+# nguồn: WHO Fetal Growth Charts — AC
+# Chu vi bụng - AC
+tuần	p10	p50	p90
+14	73	81	89
+15	83	92	100
+16	93	103	112
+17	104	114	124
+18	116	126	136
+19	127	138	148
+20	139	150	161
+21	150	162	173
+22	162	173	186
+23	173	185	198
+24	184	197	210
+25	195	208	222
+26	205	219	233
+27	215	230	245
+28	225	240	256
+29	234	250	266
+30	243	260	277
+31	252	269	287
+32	260	279	298
+33	269	288	308
+34	277	298	318
+35	286	307	329
+36	294	317	340
+37	304	328	352
+38	313	338	364
+39	324	350	377
+40	335	363	391
+
+# nguồn: WHO Fetal Growth Charts — FL
+# Chiều dài xương đùi – FL
 tuần	p10	p50	p90
 14	11	13	15
 15	14	16	18
@@ -99,18 +187,39 @@ tuần	p10	p50	p90
 39	69	73	76
 40	69	73	77
 
-# Chiều dài đầu mông (CRL)
+# nguồn: WHO Fetal Growth Charts — HL (xương cánh tay)
+# Chiều dài xương cánh tay – HL
 tuần	p10	p50	p90
-8w2	12.3	14.6	17.0
-9	19.3	21.9	24.6
-10	29.5	32.6	35.8
-11	40.2	43.8	47.5
-12	51.5	55.6	59.7
-13	63.3	67.8	72.4
-14	75.6	80.6	85.7
-15	88.5	93.9	99.4
+14	11	14	16
+15	14	16	19
+16	17	19	22
+17	20	23	25
+18	23	26	28
+19	26	28	31
+20	29	31	33
+21	31	34	36
+22	34	36	39
+23	36	38	41
+24	38	41	43
+25	40	42	45
+26	42	44	47
+27	43	46	49
+28	45	48	51
+29	47	49	52
+30	48	51	54
+31	50	53	56
+32	51	54	57
+33	53	56	59
+34	54	58	61
+35	56	59	62
+36	57	61	64
+37	58	62	65
+38	59	63	66
+39	60	64	67
+40	60	64	68
 
-# Nhịp tim thai
+# nguồn: Khoảng lâm sàng tổng hợp — KHÔNG phải percentile
+# Chu kỳ tim
 tuần	p10	p50	p90
 6	100	110	115
 7	120	135	150

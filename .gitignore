@@ -1,0 +1,6 @@
+# File tạm của LibreOffice/Excel khi đang mở file dữ liệu
+.~lock.*#
+~$*
+# Thư mục cấu hình IDE
+.idea/
+.vscode/
