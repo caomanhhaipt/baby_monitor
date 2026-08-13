@@ -84,6 +84,14 @@ kinh-cuoi: 07/03/2026
 Trang sẽ hiện dòng "Hôm nay bé được 22w5 tuần · còn N ngày tới dự sinh" và vẽ
 vạch **hôm nay** trên các biểu đồ (khi mốc hôm nay ở gần sau lần khám cuối).
 
+Quan trọng hơn: khi đã khai ngày dự sinh, **tuần thai trên biểu đồ được tính lại
+từ ngày khám** (dự sinh − 280 ngày = mốc 0 tuần) thay vì lấy cột "Tuần thai"
+trong file. Lý do: tuần in trên phiếu siêu âm thường lệch vài ngày giữa các lần
+khám vì dự sinh được hiệu chỉnh dần theo quý I, trong khi bảng chuẩn `refs.txt`
+lại tra theo tuổi thai thật — lệch mốc thì so với vùng p10–p90 sẽ sai. Cột
+"Tuần thai" vẫn được giữ để đối chiếu: chỗ nào lệch, bảng và tooltip ghi thêm
+"(phiếu 18w5)". Không khai dự sinh thì trang dùng nguyên cột trong file như trước.
+
 ## Khoảng tham chiếu
 
 File `refs.txt` (cạnh `index.html`) chứa đường cong chuẩn của mọi chỉ số, chia

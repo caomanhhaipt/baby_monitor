@@ -47,6 +47,7 @@
   header p  { margin: 2px 0 0; color: var(--text-secondary); }
   header .status { color: var(--text-primary); font-weight: 600; margin-top: 6px; }
   .footnote { color: var(--text-muted); font-size: 12.5px; margin: 12px 2px 0; }
+  .footnote code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
   /* Hàng điều khiển: checkbox từng chỉ số */
   .controls {
@@ -140,6 +141,7 @@
   th { color: var(--text-secondary); font-weight: 600; border-bottom: 1px solid var(--grid); }
   th:first-child, td:first-child { text-align: left; }
   td { font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--grid); }
+  td .note { color: var(--text-muted); font-variant-numeric: normal; }
   tr:last-child td { border-bottom: none; }
   td.empty { color: var(--text-muted); }
 </style>
@@ -161,6 +163,12 @@
   <div class="notice" id="notice" hidden></div>
 
   <div class="charts" id="charts"></div>
+
+  <p class="footnote" id="gaNote" hidden>
+    Tuần thai trên biểu đồ được tính lại từ ngày khám và ngày dự sinh khai trong
+    <code>config.txt</code>, để mọi điểm nằm đúng mốc so với bảng chuẩn. Chỗ nào
+    ghi “phiếu …” là tuần in trên phiếu siêu âm hôm đó, lệch vài ngày so với cách tính này.
+  </p>
 
   <p class="footnote" id="refNote" hidden>
     Vùng mờ trên biểu đồ là khoảng tham chiếu p10–p90 (đường mảnh là trung vị) theo
@@ -192,7 +200,11 @@ let metrics = [];
 let timeKind = null;          // 'week' | 'date'
 let hidden = new Set(JSON.parse(localStorage.getItem(STORE_KEY) || "[]"));
 let config = {};              // đọc từ config.txt (du-sinh / kinh-cuoi)
+let edd = null;               // ngày dự sinh (ms)
 let pregInfo = null;          // {edd, todayWeek, daysLeft}
+
+const DAY = 864e5;
+const TERM_DAYS = 280;        // 40 tuần: dự sinh = ngày đầu kỳ kinh cuối + 280 ngày
 
 const $ = id => document.getElementById(id);
 const nf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
@@ -439,20 +451,26 @@ async function loadConfig() {
   } catch (e) { /* không có config cũng chẳng sao */ }
 }
 
-function pregnancyInfo() {
-  let edd = null;
+function parseEdd() {
   if (config["du-sinh"]) {
     const p = parseTime(config["du-sinh"]);
-    if (p && p.kind === "date") edd = p.t;
+    if (p && p.kind === "date") return p.t;
   }
-  if (edd == null && config["kinh-cuoi"]) {
+  if (config["kinh-cuoi"]) {
     const p = parseTime(config["kinh-cuoi"]);
-    if (p && p.kind === "date") edd = p.t + 280 * 864e5;
+    if (p && p.kind === "date") return p.t + TERM_DAYS * DAY;
   }
+  return null;
+}
+
+// Tuổi thai (tuần) của một ngày bất kỳ, tính ngược từ ngày dự sinh
+const gaAt = date => (date - (edd - TERM_DAYS * DAY)) / DAY / 7;
+
+function pregnancyInfo() {
   if (edd == null) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const daysLeft = Math.round((edd - today.getTime()) / 864e5);
-  const gaDays = 280 - daysLeft;
+  const daysLeft = Math.round((edd - today.getTime()) / DAY);
+  const gaDays = TERM_DAYS - daysLeft;
   if (gaDays < 0 || gaDays > 315) return null; // ngoài thai kỳ thì thôi
   return { edd, todayWeek: gaDays / 7, daysLeft };
 }
@@ -549,7 +567,20 @@ function ingest(results) {
     const dropped = m.points.filter(p => p.kind !== timeKind);
     if (dropped.length) errors.push(`${m.file}: bỏ qua ${dropped.length} dòng có mốc thời gian khác kiểu (${timeKind === "week" ? "tuần" : "ngày"})`);
     m.points = m.points.filter(p => p.kind === timeKind)
-      .map(p => ({ t: p.t, value: p.value, date: p.date ?? null, display: displayTime(p.t, timeKind) }))
+      .map(p => {
+        // Có ngày dự sinh thì tuổi thai được tính lại từ ngày khám, để mọi điểm
+        // nằm trên cùng một mốc thời gian với bảng chuẩn trong refs.txt — tuần
+        // ghi trên phiếu khám thường lệch vài ngày (dự sinh được hiệu chỉnh dần).
+        let t = p.t, weekFile = null;
+        if (edd != null && timeKind === "week" && p.date != null) {
+          const ga = gaAt(p.date);
+          // ngưỡng nửa ngày: hai mốc đều là bội của 1/7 tuần nên lệch từ 1 ngày
+          // trở lên là vượt, mà không vấp sai số dấu phẩy động ở đúng mốc 1/7
+          if (Math.abs(ga - p.t) >= 0.5 / 7) weekFile = weekLabel(p.t);
+          t = ga;
+        }
+        return { t, value: p.value, date: p.date ?? null, weekFile, display: displayTime(t, timeKind) };
+      })
       .sort((a, b) => a.t - b.t);
     if (m.bad.length) errors.push(`${m.file} – ${m.name}: bỏ qua ${m.bad.length} giá trị không đọc được`);
   }
@@ -767,6 +798,14 @@ function dateAt(t) {
   return null;
 }
 
+// Tuần ghi trên phiếu khám tại mốc đó, chỉ có khi lệch với tuổi thai tính lại
+function fileWeekAt(t) {
+  for (const m of metrics)
+    for (const p of m.points)
+      if (p.t === t && p.weekFile) return p.weekFile;
+  return null;
+}
+
 function onHover(t, cx, cy) {
   const times = unionTimes();
   if (!times.length) return;
@@ -788,6 +827,8 @@ function onHover(t, cx, cy) {
   if (timeKind === "week") {
     const date = dateAt(snapped);
     if (date != null) head.textContent += ` · ${displayTime(date, "date")}`;
+    const wf = fileWeekAt(snapped);
+    if (wf) head.textContent += ` · phiếu ghi ${wf}`;
   }
   tip.appendChild(head);
   for (const m of metrics) {
@@ -883,6 +924,13 @@ function renderTable() {
     const tr = tbody.insertRow();
     const td0 = tr.insertCell();
     td0.textContent = displayTime(t, timeKind);
+    const wf = timeKind === "week" ? fileWeekAt(t) : null;
+    if (wf) {
+      const note = document.createElement("span");
+      note.className = "note";
+      note.textContent = ` (phiếu ${wf})`;
+      td0.appendChild(note);
+    }
     if (hasDates) {
       const td = tr.insertCell();
       const date = dateAt(t);
@@ -919,6 +967,7 @@ function renderAll(errors) {
   renderTable();
   updateStatus();
   $("refNote").hidden = !metrics.some(m => m.ref);
+  $("gaNote").hidden = !metrics.some(m => m.points.some(p => p.weekFile));
   if (errors && errors.length) {
     const frag = document.createDocumentFragment();
     const s = document.createElement("strong"); s.textContent = "Một số dòng bị bỏ qua: ";
@@ -954,6 +1003,7 @@ function showPicker(reason) {
 async function boot() {
   hideNotice();
   const [results] = await Promise.all([loadFromServer(), loadConfig()]);
+  edd = parseEdd();
   pregInfo = pregnancyInfo();
   updateStatus();
   if (results === null) { showPicker(); return; }
