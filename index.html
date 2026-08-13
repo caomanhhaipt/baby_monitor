@@ -244,9 +244,50 @@ function displayTime(t, kind) {
   return `Tuần ${weekLabel(t)}`;
 }
 
-function parseMetricFile(file, text) {
+// "Cân nặng ước tính (g)" → {name: "Cân nặng ước tính", unit: "g"}
+// (lấy cặp ngoặc CUỐI làm đơn vị, nên "Chiều dài đầu mông (CRL) (mm)" vẫn đúng)
+function stripNameUnit(cell) {
+  const m = cell.match(/^(.*)\(([^()]*)\)\s*$/);
+  return m ? { name: m[1].trim(), unit: m[2].trim() } : { name: cell.trim(), unit: "" };
+}
+
+const isMissing = v => v == null || v === "" || v === "-" || v === "–" || v === "—";
+
+// Một file data có thể chứa một hoặc nhiều chỉ số:
+// - Dạng bảng rộng (dòng đầu ≥ 3 cột): ngày khám / tuần thai / mỗi cột một chỉ số,
+//   header cột dạng "Tên (đơn vị)", ô chưa đo điền "-".
+// - Dạng cũ (dòng đầu 2 cột "tên<TAB>đơn vị"): mỗi file một chỉ số.
+function parseDataFile(file, text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
   if (!lines.length) return { error: `${file}: file rỗng` };
+  if (lines[0].split("\t").map(s => s.trim()).filter(Boolean).length >= 3)
+    return parseWideFile(file, lines);
+  return parseNarrowFile(file, lines);
+}
+
+function parseWideFile(file, lines) {
+  const head = lines[0].split("\t").map(s => s.trim());
+  const cols = head.slice(2).map(stripNameUnit).filter(c => c.name);
+  const metricsOut = cols.map((c, i) => ({ file, col: i, name: c.name, unit: c.unit, points: [], bad: [] }));
+  const bad = [];
+  for (const line of lines.slice(1)) {
+    const cells = line.split("\t").map(s => s.trim());
+    const date = parseTime(cells[0] ?? "");
+    const week = parseTime(cells[1] ?? "");
+    if (!week || week.kind !== "week") { bad.push(line); continue; }
+    const dts = date && date.kind === "date" ? date.t : null;
+    metricsOut.forEach((m, i) => {
+      const raw = cells[i + 2];
+      if (isMissing(raw)) return;
+      const v = parseNumber(raw);
+      if (!Number.isFinite(v)) { m.bad.push(`${cells[1]}: "${raw}"`); return; }
+      m.points.push({ kind: "week", t: week.t, value: v, date: dts });
+    });
+  }
+  return { file, metrics: metricsOut, bad };
+}
+
+function parseNarrowFile(file, lines) {
   const head = splitCols(lines[0]);
   if (head.length < 2) return { error: `${file}: dòng đầu phải có "tên chỉ số<TAB>đơn vị"` };
   const [name, unit] = head;
@@ -261,14 +302,14 @@ function parseMetricFile(file, text) {
       if (!week || week.kind !== "week" || !Number.isFinite(value)) { bad.push(line); continue; }
       points.push({ kind: "week", t: week.t, value, date: date && date.kind === "date" ? date.t : null });
     } else if (cols.length === 2) {
-      // 2 cột (format cũ): mốc khám <tab> giá trị
+      // 2 cột: mốc khám <tab> giá trị
       const time = parseTime(cols[0]);
       const value = parseNumber(cols[1]);
       if (!time || !Number.isFinite(value)) { bad.push(line); continue; }
       points.push({ ...time, value, date: time.kind === "date" ? time.t : null });
     } else bad.push(line);
   }
-  return { file, name, unit, points, bad };
+  return { file, metrics: [{ file, col: null, name, unit, points, bad }], bad: [] };
 }
 
 /* ---------- Nạp danh sách file trong data/ ---------- */
@@ -350,7 +391,7 @@ async function loadFromServer() {
     try {
       const res = await fetch("data/" + encodeURIComponent(n), { cache: "no-store" });
       if (!res.ok) return { error: `${n}: HTTP ${res.status}` };
-      return parseMetricFile(n, await res.text());
+      return parseDataFile(n, await res.text());
     } catch (e) { return { error: `${n}: ${e.message}` }; }
   }));
   return results;
@@ -388,25 +429,51 @@ function pregnancyInfo() {
   return { edd, todayWeek: gaDays / 7, daysLeft };
 }
 
-// Khoảng tham chiếu: refs/<cùng tên file data>, mỗi dòng "tuần p5 p50 p95"
+// Các dòng "tuần p5 p50 p95" → [{t, lo, mid, hi}]
+function parseRefRows(lines) {
+  const rows = lines.map(splitCols)
+    .filter(c => c.length >= 4)
+    .map(c => {
+      const t = parseTime(c[0]);
+      return t && t.kind === "week"
+        ? { t: t.t, lo: parseNumber(c[1]), mid: parseNumber(c[2]), hi: parseNumber(c[3]) }
+        : null;
+    })
+    .filter(r => r && [r.lo, r.mid, r.hi].every(Number.isFinite))
+    .sort((a, b) => a.t - b.t);
+  return rows.length > 1 ? rows : null;
+}
+
+// refs.txt: một file cho mọi chỉ số, chia mục bằng dòng "# Tên chỉ số"
+// (tên phải khớp tên cột/chỉ số trong data, không tính phần đơn vị)
+function parseRefSections(text) {
+  const out = {};
+  let cur = null, buf = [];
+  const flush = () => { if (cur) { const rows = parseRefRows(buf); if (rows) out[cur] = rows; } };
+  for (const line of text.split(/\r?\n/)) {
+    const l = line.trim();
+    if (!l) continue;
+    if (l.startsWith("#")) { flush(); cur = l.replace(/^#+\s*/, ""); buf = []; }
+    else if (cur) buf.push(l);
+  }
+  flush();
+  return out;
+}
+
+// Khoảng tham chiếu: refs.txt (khớp theo tên chỉ số); file dạng cũ vẫn đọc
+// được refs/<cùng tên file data> như trước
 async function loadRefs() {
+  let sections = {};
+  try {
+    const res = await fetch("refs.txt", { cache: "no-store" });
+    if (res.ok) sections = parseRefSections(await res.text());
+  } catch (e) { /* không có refs.txt thì thôi */ }
   await Promise.all(metrics.map(async m => {
-    m.ref = null;
+    m.ref = sections[m.name] || null;
+    if (m.ref || m.col != null) return;
     try {
       const res = await fetch("refs/" + encodeURIComponent(m.file), { cache: "no-store" });
-      if (!res.ok) return;
-      const rows = (await res.text()).split(/\r?\n/)
-        .map(l => l.trim()).filter(Boolean).map(splitCols)
-        .filter(c => c.length >= 4)
-        .map(c => {
-          const t = parseTime(c[0]);
-          return t && t.kind === "week"
-            ? { t: t.t, lo: parseNumber(c[1]), mid: parseNumber(c[2]), hi: parseNumber(c[3]) }
-            : null;
-        })
-        .filter(r => r && [r.lo, r.mid, r.hi].every(Number.isFinite))
-        .sort((a, b) => a.t - b.t);
-      if (rows.length > 1) m.ref = rows;
+      if (res.ok) m.ref = parseRefRows((await res.text()).split(/\r?\n/).map(l => l.trim()).filter(Boolean));
     } catch (e) { /* không có tham chiếu thì bỏ qua */ }
   }));
 }
@@ -432,13 +499,19 @@ function refSlice(ref, lo, hi) {
 
 function loadFromFileList(fileList) {
   const files = [...fileList].filter(f => /\.txt$/i.test(f.name) && f.name.toLowerCase() !== "manifest.txt");
-  return Promise.all(files.map(f => f.text().then(text => parseMetricFile(f.name, text))));
+  return Promise.all(files.map(f => f.text().then(text => parseDataFile(f.name, text))));
 }
 
 function ingest(results) {
   const errors = results.filter(r => r.error).map(r => r.error);
-  let parsed = results.filter(r => !r.error && r.points.length);
-  parsed.sort((a, b) => a.file.localeCompare(b.file, "vi"));
+  let parsed = [];
+  for (const r of results) {
+    if (r.error) continue;
+    if (r.bad && r.bad.length) errors.push(`${r.file}: bỏ qua ${r.bad.length} dòng không đọc được`);
+    parsed.push(...r.metrics);
+  }
+  // File xếp theo tên; trong một file bảng rộng thì giữ nguyên thứ tự cột
+  parsed.sort((a, b) => a.file.localeCompare(b.file, "vi") || (a.col ?? 0) - (b.col ?? 0));
 
   // Thống nhất kiểu mốc thời gian (tuần hoặc ngày) — lấy theo đa số
   const kinds = parsed.flatMap(m => m.points.map(p => p.kind));
@@ -450,10 +523,13 @@ function ingest(results) {
     m.points = m.points.filter(p => p.kind === timeKind)
       .map(p => ({ t: p.t, value: p.value, date: p.date ?? null, display: displayTime(p.t, timeKind) }))
       .sort((a, b) => a.t - b.t);
-    if (m.bad.length) errors.push(`${m.file}: bỏ qua ${m.bad.length} dòng không đọc được`);
+    if (m.bad.length) errors.push(`${m.file} – ${m.name}: bỏ qua ${m.bad.length} giá trị không đọc được`);
   }
   parsed = parsed.filter(m => m.points.length);
-  parsed.forEach((m, i) => { m.slot = i < N_SLOTS ? i + 1 : 0; });
+  parsed.forEach((m, i) => {
+    m.slot = i < N_SLOTS ? i + 1 : 0;
+    m.key = m.col == null ? m.file : `${m.file}::${m.name}`; // khóa bật/tắt & lưu trạng thái
+  });
   metrics = parsed;
   return errors;
 }
@@ -518,7 +594,7 @@ function renderCharts() {
   const chartsBox = $("charts");
   chartsBox.textContent = "";
   panelState = [];
-  const visible = metrics.filter(m => !hidden.has(m.file));
+  const visible = metrics.filter(m => !hidden.has(m.key));
   if (!metrics.length) return;
   if (!visible.length) {
     const d = document.createElement("div");
@@ -546,7 +622,8 @@ function renderCharts() {
     const h2 = document.createElement("h2");
     const sw = document.createElement("span"); sw.className = "swatch";
     const nm = document.createElement("span"); nm.textContent = m.name;
-    const un = document.createElement("span"); un.className = "unit"; un.textContent = `(${m.unit})`;
+    const un = document.createElement("span"); un.className = "unit";
+    if (m.unit) un.textContent = `(${m.unit})`;
     h2.append(sw, nm, un);
     panel.appendChild(h2);
 
@@ -644,7 +721,7 @@ function renderCharts() {
 /* ---------- Crosshair đồng bộ + tooltip chung ---------- */
 
 function unionTimes() {
-  return [...new Set(metrics.filter(m => !hidden.has(m.file)).flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
+  return [...new Set(metrics.filter(m => !hidden.has(m.key)).flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
 }
 
 // Ngày khám ứng với một mốc tuần thai (lấy từ bất kỳ chỉ số nào có ghi ngày)
@@ -679,7 +756,7 @@ function onHover(t, cx, cy) {
   }
   tip.appendChild(head);
   for (const m of metrics) {
-    if (hidden.has(m.file)) continue;
+    if (hidden.has(m.key)) continue;
     const idx = m.points.findIndex(p => p.t === snapped);
     if (idx < 0) continue;
     const p = m.points[idx];
@@ -687,7 +764,7 @@ function onHover(t, cx, cy) {
     row.style.setProperty("--c", `var(--series-${m.slot || 1})`);
     const key = document.createElement("span"); key.className = "tt-key";
     const val = document.createElement("span"); val.className = "tt-val";
-    val.textContent = `${nf.format(p.value)} ${m.unit}`;
+    val.textContent = nf.format(p.value) + (m.unit ? ` ${m.unit}` : "");
     row.append(key, val);
     if (idx > 0) { // chênh lệch so với lần khám trước
       const diff = p.value - m.points[idx - 1].value;
@@ -729,9 +806,9 @@ function renderToggles() {
     label.style.setProperty("--c", `var(--series-${m.slot || 1})`);
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = !hidden.has(m.file);
+    cb.checked = !hidden.has(m.key);
     cb.addEventListener("change", () => {
-      cb.checked ? hidden.delete(m.file) : hidden.add(m.file);
+      cb.checked ? hidden.delete(m.key) : hidden.add(m.key);
       localStorage.setItem(STORE_KEY, JSON.stringify([...hidden]));
       renderCharts();
     });
@@ -763,7 +840,7 @@ function renderTable() {
   }
   for (const m of metrics) {
     const th = document.createElement("th");
-    th.textContent = `${m.name} (${m.unit})`;
+    th.textContent = m.unit ? `${m.name} (${m.unit})` : m.name;
     thead.appendChild(th);
   }
   const tbody = table.createTBody();

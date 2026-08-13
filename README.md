@@ -34,27 +34,28 @@ Hai trường hợp cần chỉnh tay khi dùng đường API dự phòng (2 h�
 - **Trang không nằm ở gốc repo** (ví dụ deploy từ `docs/`): sửa `DATA_PATH`
   thành đường dẫn thật trong repo, ví dụ `"docs/data"`.
 
-## Thêm chỉ số mới
+## Nhập số liệu
 
-Tạo một file `.txt` trong thư mục `data/`, các cột cách nhau bằng **tab**:
+Toàn bộ số liệu nằm trong một file bảng: `data/kham-thai.txt`, các cột cách
+nhau bằng **tab**. Mỗi lần đi khám thêm đúng **một dòng**:
 
 ```
-Cân nặng ước tính	g
-28/06/2026	16w1	146
-25/07/2026	20	331
-10/08/2026	22w2	478
+Ngày khám	Tuần thai	Cân nặng ước tính (g)	Nhịp tim thai (lần/phút)
+28/06/2026	16w1	146	152
+25/07/2026	20	331	146
+10/08/2026	22w2	478	-
 ```
 
-- **Dòng đầu**: tên chỉ số `<tab>` đơn vị đo.
-- **Các dòng sau**: ngày khám `<tab>` tuần thai `<tab>` giá trị đo được.
+- **Dòng đầu (header)**: hai cột đầu là ngày khám và tuần thai, mỗi cột sau là
+  một chỉ số dạng `Tên (đơn vị)` — **thêm cột mới là web tự có thêm biểu đồ**.
 - Ngày khám viết `28/06/2026` hoặc `2026-06-28`.
 - Tuần thai viết `20` (chẵn tuần) hoặc `16w1` (16 tuần 1 ngày); `16w1d`,
   `16.5` cũng được. Biểu đồ vẽ theo tuần thai; ngày khám hiện ở tooltip
   và bảng số liệu.
-- Lần khám nào không đo chỉ số nào thì bỏ qua, không cần điền — biểu đồ tự
-  xử lý điểm thiếu.
+- Ô nào chưa đo điền `-`.
 - Số thập phân viết `12.5` hoặc `12,5` đều được.
-- Format 2 cột cũ (`mốc khám <tab> giá trị`) vẫn đọc được.
+- Có thể tách nhiều file bảng (vd mỗi tam cá nguyệt một file) — trang đọc mọi
+  file `.txt` trong `data/`. Format cũ mỗi-chỉ-số-một-file vẫn đọc được.
 
 Thêm file xong bấm **Tải lại dữ liệu** (hoặc F5). Không cần khai báo gì thêm —
 trang tự quét thư mục `data/`.
@@ -81,9 +82,12 @@ vạch **hôm nay** trên các biểu đồ (khi mốc hôm nay ở gần sau l�
 
 ## Khoảng tham chiếu
 
-Nếu tồn tại file `refs/<cùng tên file trong data/>`, biểu đồ chỉ số đó sẽ có
-vùng mờ p5–p95 và đường trung vị phía sau đường đo. Format mỗi dòng:
-`tuần <tab> p5 <tab> p50 <tab> p95` (dòng tiêu đề tùy chọn).
+File `refs.txt` (cạnh `index.html`) chứa đường cong chuẩn của mọi chỉ số, chia
+mục bằng dòng `# Tên chỉ số` (tên khớp với header cột trong data, bỏ phần đơn
+vị); dưới mỗi mục là các dòng `tuần <tab> p5 <tab> p50 <tab> p95`. Chỉ số nào
+có mục trong file này thì biểu đồ có vùng mờ p5–p95 và đường trung vị phía sau
+đường đo. Đây là bảng tra cứu tĩnh điền một lần — **không phải cập nhật gì khi
+đi khám**.
 
 > ⚠️ Số liệu trong `refs/` đi kèm repo là giá trị **xấp xỉ** tổng hợp từ các
 > bảng tăng trưởng thông dụng (Hadlock, WHO), chỉ để tham khảo hình dạng đường

@@ -1,5 +1,1 @@
-can-nang.txt
-chieu-dai-dau-mong.txt
-chieu-dai-xuong-dui.txt
-duong-kinh-luong-dinh.txt
-nhip-tim.txt
+kham-thai.txt
