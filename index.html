@@ -555,7 +555,10 @@ function ingest(results) {
   }
   parsed = parsed.filter(m => m.points.length);
   parsed.forEach((m, i) => {
-    m.slot = i < N_SLOTS ? i + 1 : 0;
+    // Quá 8 chỉ số thì quay vòng lại bảng màu — mỗi chỉ số một biểu đồ riêng có
+    // tiêu đề riêng nên màu không phải thứ phân biệt chúng; slot bám theo thứ tự
+    // cột nên bật/tắt chỉ số không làm đổi màu các chỉ số còn lại.
+    m.slot = (i % N_SLOTS) + 1;
     m.key = m.col == null ? m.file : `${m.file}::${m.name}`; // khóa bật/tắt & lưu trạng thái
   });
   metrics = parsed;
@@ -674,21 +677,25 @@ function renderCharts() {
     }
     // Trục hoành: mỗi lần khám một tick — tuần nằm ngang, ngày khám xoay dọc
     el("line", { class: "baseline", x1: M.left, x2: width - M.right, y1: baseY, y2: baseY }, svg);
-    let lastTickX = -Infinity;
+    // Ngày khám xoay dọc nên chỉ cần ~13px một mốc; nhãn tuần nằm ngang rộng gấp
+    // đôi nên thưa hơn — giữ mọi ngày khám, chỉ bỏ bớt nhãn tuần khi chúng sát nhau.
+    const weekRow = axis.ticks.some(tk => tk.week != null);
+    const dateY = baseY + (weekRow ? 25 : 10);
+    let lastTickX = -Infinity, lastWeekX = -Infinity;
     for (const tk of axis.ticks) {
       const x = sx(tk.t);
-      if (x - lastTickX < 15) continue; // tránh nhãn chồng nhau khi hai lần khám sát nhau
+      if (x - lastTickX < 13) continue;
       lastTickX = x;
       if (axis.vertical) el("line", { class: "baseline", x1: x, x2: x, y1: baseY, y2: baseY + 4 }, svg);
-      if (tk.week != null) {
+      if (tk.week != null && x - lastWeekX >= 32) {
+        lastWeekX = x;
         const t = el("text", { x, y: baseY + 16, "text-anchor": "middle" }, svg);
         t.textContent = tk.week;
       }
       if (tk.date != null) {
-        const yStart = baseY + (tk.week != null ? 25 : 10);
         const t = el("text", {
           "text-anchor": "end", dy: "0.35em",
-          transform: `translate(${x} ${yStart}) rotate(-90)`
+          transform: `translate(${x} ${dateY}) rotate(-90)`
         }, svg);
         t.textContent = displayTime(tk.date, "date");
       }
