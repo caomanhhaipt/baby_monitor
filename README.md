@@ -84,15 +84,23 @@ vạch **hôm nay** trên các biểu đồ (khi mốc hôm nay ở gần sau l�
 
 File `refs.txt` (cạnh `index.html`) chứa đường cong chuẩn của mọi chỉ số, chia
 mục bằng dòng `# Tên chỉ số` (tên khớp với header cột trong data, bỏ phần đơn
-vị); dưới mỗi mục là các dòng `tuần <tab> p5 <tab> p50 <tab> p95`. Chỉ số nào
-có mục trong file này thì biểu đồ có vùng mờ p5–p95 và đường trung vị phía sau
-đường đo. Đây là bảng tra cứu tĩnh điền một lần — **không phải cập nhật gì khi
-đi khám**.
+vị); dưới mỗi mục là các dòng `tuần <tab> p10 <tab> p50 <tab> p90`. Chỉ số nào
+có mục trong file này thì biểu đồ có vùng mờ p10–p90 và đường trung vị phía sau
+đường đo. Giữa các tuần có trong bảng trang tự nội suy tuyến tính. Đây là bảng
+tra cứu tĩnh điền một lần — **không phải cập nhật gì khi đi khám**.
 
-> ⚠️ Số liệu trong `refs/` đi kèm repo là giá trị **xấp xỉ** tổng hợp từ các
-> bảng tăng trưởng thông dụng (Hadlock, WHO), chỉ để tham khảo hình dạng đường
-> cong. Hãy thay bằng bảng chuẩn mà phòng khám/bác sĩ của bạn sử dụng, và mọi
-> kết luận về sức khỏe của bé luôn theo bác sĩ.
+Nguồn số liệu (ghi cả trong đầu file `refs.txt`):
+
+- **Cân nặng ước tính, BPD, FL**: WHO Fetal Growth Charts (Kiserud và cộng sự,
+  2017, PLoS Medicine) — percentile p10/p50/p90 theo tuần 14–40.
+- **CRL**: chuẩn INTERGROWTH-21st (Papageorghiou và cộng sự, 2014).
+- **Nhịp tim thai**: không có bảng percentile chuẩn duy nhất phủ cả thai kỳ —
+  mục này là khoảng bình thường tổng hợp từ tài liệu lâm sàng, chỉ mang tính
+  định hướng.
+
+> ⚠️ Vùng tham chiếu chỉ để tham khảo giữa hai lần khám. Mọi kết luận về sức
+> khỏe của bé luôn theo bác sĩ — bác sĩ đánh giá tổng thể nhiều chỉ số cùng
+> bối cảnh lâm sàng, không nhìn một đường trên biểu đồ.
 
 ## Tính năng
 
