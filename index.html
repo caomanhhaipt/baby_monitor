@@ -384,23 +384,21 @@ function xDomain() {
   return { lo: lo - pad, hi: hi + pad };
 }
 
-function xTicks(dom) {
+// Mốc trục x: một tick tại mỗi lần khám, gồm nhãn tuần (ngang) và ngày khám
+// (xoay dọc). Khi dữ liệu không có ngày khám thì quay về tick số tuần tròn.
+function axisTicks(dom) {
+  const times = [...new Set(metrics.flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
   if (timeKind === "week") {
-    return niceTicks(dom.lo, dom.hi, 6).ticks
-      .filter(v => v >= dom.lo && v <= dom.hi)
-      .map(v => ({ t: v, label: nf.format(v) }));
+    if (times.some(t => dateAt(t) != null))
+      return { vertical: true, ticks: times.map(t => ({ t, week: weekLabel(t), date: dateAt(t) })) };
+    return {
+      vertical: false,
+      ticks: niceTicks(dom.lo, dom.hi, 6).ticks
+        .filter(v => v >= dom.lo && v <= dom.hi)
+        .map(v => ({ t: v, week: nf.format(v), date: null }))
+    };
   }
-  const DAY = 864e5;
-  const span = dom.hi - dom.lo;
-  const stepDays = [1, 2, 7, 14, 30, 60, 90].find(d => span / (d * DAY) <= 7) || 180;
-  const ticks = [];
-  let d = new Date(dom.lo); d.setHours(0, 0, 0, 0);
-  for (let t = d.getTime(); t <= dom.hi; t += stepDays * DAY) {
-    if (t < dom.lo) continue;
-    const dt = new Date(t);
-    ticks.push({ t, label: `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}` });
-  }
-  return ticks;
+  return { vertical: true, ticks: times.map(t => ({ t, week: null, date: t })) };
 }
 
 const svgNS = "http://www.w3.org/2000/svg";
@@ -411,8 +409,8 @@ function el(tag, attrs, parent) {
   return node;
 }
 
-const M = { top: 10, right: 52, bottom: 26, left: 50 };
-const PANEL_H = 190;
+const M = { top: 10, right: 52, left: 50 };
+const PLOT_H = 154; // chiều cao vùng vẽ; chiều cao panel = top + PLOT_H + lề dưới
 let panelState = []; // {metric, svg, sx, points, crosshair, dots}
 
 function renderCharts() {
@@ -430,10 +428,13 @@ function renderCharts() {
   }
 
   const dom = xDomain();
-  const xt = xTicks(dom);
+  const axis = axisTicks(dom);
+  const mBottom = axis.vertical ? 96 : 26;
+  const panelH = M.top + PLOT_H + mBottom;
+  const baseY = M.top + PLOT_H;
   const width = Math.max(300, (chartsBox.clientWidth - (chartsBox.clientWidth >= 720 ? 16 : 0)) / (chartsBox.clientWidth >= 720 ? 2 : 1));
   const plotW = width - M.left - M.right;
-  const plotH = PANEL_H - M.top - M.bottom;
+  const plotH = PLOT_H;
   const sx = t => M.left + (t - dom.lo) / (dom.hi - dom.lo) * plotW;
 
   for (const m of visible) {
@@ -448,7 +449,7 @@ function renderCharts() {
     h2.append(sw, nm, un);
     panel.appendChild(h2);
 
-    const svg = el("svg", { viewBox: `0 0 ${width} ${PANEL_H}`, role: "img" });
+    const svg = el("svg", { viewBox: `0 0 ${width} ${panelH}`, role: "img" });
     svg.setAttribute("aria-label", `${m.name} (${m.unit}) theo ${timeKind === "week" ? "tuần thai" : "ngày khám"}`);
 
     const vals = m.points.map(p => p.value);
@@ -463,11 +464,26 @@ function renderCharts() {
       const t = el("text", { x: M.left - 8, y: sy(v) + 3.5, "text-anchor": "end" }, svg);
       t.textContent = nf.format(v);
     }
-    // Trục hoành + nhãn mốc thời gian
-    el("line", { class: "baseline", x1: M.left, x2: width - M.right, y1: PANEL_H - M.bottom, y2: PANEL_H - M.bottom }, svg);
-    for (const tk of xt) {
-      const t = el("text", { x: sx(tk.t), y: PANEL_H - M.bottom + 16, "text-anchor": "middle" }, svg);
-      t.textContent = tk.label;
+    // Trục hoành: mỗi lần khám một tick — tuần nằm ngang, ngày khám xoay dọc
+    el("line", { class: "baseline", x1: M.left, x2: width - M.right, y1: baseY, y2: baseY }, svg);
+    let lastTickX = -Infinity;
+    for (const tk of axis.ticks) {
+      const x = sx(tk.t);
+      if (x - lastTickX < 15) continue; // tránh nhãn chồng nhau khi hai lần khám sát nhau
+      lastTickX = x;
+      if (axis.vertical) el("line", { class: "baseline", x1: x, x2: x, y1: baseY, y2: baseY + 4 }, svg);
+      if (tk.week != null) {
+        const t = el("text", { x, y: baseY + 16, "text-anchor": "middle" }, svg);
+        t.textContent = tk.week;
+      }
+      if (tk.date != null) {
+        const yStart = baseY + (tk.week != null ? 25 : 10);
+        const t = el("text", {
+          "text-anchor": "end", dy: "0.35em",
+          transform: `translate(${x} ${yStart}) rotate(-90)`
+        }, svg);
+        t.textContent = displayTime(tk.date, "date");
+      }
     }
 
     const color = getComputedStyle(document.documentElement).getPropertyValue(`--series-${m.slot || 1}`).trim() || "#898781";
@@ -485,10 +501,10 @@ function renderCharts() {
     const lbl = el("text", { class: "endlabel", x: sx(last.t) + 9, y: sy(last.value) + 4 }, svg);
     lbl.textContent = nf.format(last.value);
 
-    const crosshair = el("line", { class: "crosshair", y1: M.top, y2: PANEL_H - M.bottom, visibility: "hidden" }, svg);
+    const crosshair = el("line", { class: "crosshair", y1: M.top, y2: baseY, visibility: "hidden" }, svg);
 
     // Lớp bắt hover phủ toàn vùng vẽ
-    const hit = el("rect", { x: 0, y: 0, width, height: PANEL_H, fill: "transparent" }, svg);
+    const hit = el("rect", { x: 0, y: 0, width, height: panelH, fill: "transparent" }, svg);
     hit.addEventListener("pointermove", e => {
       const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
       const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
