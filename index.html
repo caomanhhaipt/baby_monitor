@@ -273,32 +273,44 @@ function parseMetricFile(file, text) {
 
 /* ---------- Nạp danh sách file trong data/ ---------- */
 
+const FILES_KEY = "baby-monitor-files";
+
 async function listDataFiles() {
+  let names = null;
   // 1) Autoindex của http server (python3 -m http.server, nginx autoindex…)
   try {
     const res = await fetch("data/", { cache: "no-store" });
     if (res.ok) {
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-      const names = [...doc.querySelectorAll("a[href]")]
+      const found = [...doc.querySelectorAll("a[href]")]
         .map(a => decodeURIComponent(a.getAttribute("href").split("/").pop().split("?")[0]))
         .filter(n => /\.txt$/i.test(n) && n.toLowerCase() !== "manifest.txt");
-      if (names.length) return [...new Set(names)];
+      if (found.length) names = [...new Set(found)];
     }
   } catch (e) { /* thử cách tiếp theo */ }
-  // 2) GitHub Pages: liệt kê thư mục data/ của repo qua GitHub API
-  try {
-    const names = await listFromGitHubAPI();
-    if (names && names.length) return names;
-  } catch (e) { /* thử cách tiếp theo */ }
-  // 3) Manifest thủ công: data/manifest.txt, mỗi dòng một tên file
-  try {
+  // 2) data/manifest.txt — GitHub Action trong repo tự cập nhật file này
+  if (!names) try {
     const res = await fetch("data/manifest.txt", { cache: "no-store" });
     if (res.ok) {
-      const names = (await res.text()).split(/\r?\n/).map(s => s.trim())
-        .filter(n => n && !n.startsWith("#"));
-      if (names.length) return names;
+      const found = (await res.text()).split(/\r?\n/).map(s => s.trim())
+        .filter(n => n && !n.startsWith("#") && /\.txt$/i.test(n));
+      if (found.length) names = found;
     }
-  } catch (e) { /* hết cách qua mạng */ }
+  } catch (e) { /* thử cách tiếp theo */ }
+  // 3) GitHub API (dự phòng — có giới hạn 60 request/giờ mỗi IP)
+  if (!names) try {
+    const found = await listFromGitHubAPI();
+    if (found && found.length) names = found;
+  } catch (e) { /* thử cách tiếp theo */ }
+  if (names) {
+    localStorage.setItem(FILES_KEY, JSON.stringify(names));
+    return names;
+  }
+  // 4) Danh sách của lần tải thành công gần nhất (đề phòng nghẽn mạng/API)
+  try {
+    const cached = JSON.parse(localStorage.getItem(FILES_KEY) || "null");
+    if (Array.isArray(cached) && cached.length) return cached;
+  } catch (e) { /* hết cách */ }
   return null;
 }
 
@@ -318,9 +330,10 @@ async function listFromGitHubAPI() {
     repo = seg.length && !seg[0].endsWith(".html") ? seg[0] : `${owner}.github.io`;
   }
   if (!owner || !repo) return null;
+  // Không dùng no-store: để trình duyệt tận dụng cache 60s của API, đỡ tốn quota
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${DATA_PATH}`,
-    { cache: "no-store", headers: { Accept: "application/vnd.github+json" } }
+    { headers: { Accept: "application/vnd.github+json" } }
   );
   if (!res.ok) return null;
   const items = await res.json();

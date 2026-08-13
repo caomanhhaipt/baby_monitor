@@ -19,18 +19,20 @@ file `index.html` (giao thức `file://`), trang sẽ hiện nút **Chọn thư 
 ## Đưa lên GitHub Pages
 
 Push repo (public) lên GitHub rồi bật Pages (Settings → Pages → deploy từ branch).
-Trang tự nhận diện `owner/repo` từ URL `*.github.io` và hỏi GitHub API danh sách
-file trong `data/` — thêm chỉ số mới chỉ cần push file `.txt`, không phải khai báo gì.
+Danh sách file trong `data/` được đọc từ `data/manifest.txt` — file này do GitHub
+Action trong repo (`.github/workflows/manifest.yml`) **tự sinh lại mỗi lần push**,
+nên thêm chỉ số mới vẫn chỉ cần push file `.txt`, không phải khai báo gì.
 
-Hai trường hợp cần chỉnh tay (sửa 2 hằng số ở đầu `<script>` trong `index.html`):
+Nếu manifest thiếu (ví dụ Action bị tắt), trang sẽ thử tiếp GitHub API (tự nhận
+diện `owner/repo` từ URL `*.github.io`; giới hạn 60 request/giờ mỗi IP), rồi tới
+danh sách đã lưu của lần tải thành công gần nhất.
+
+Hai trường hợp cần chỉnh tay khi dùng đường API dự phòng (2 hằng số ở đầu
+`<script>` trong `index.html`):
 
 - **Custom domain** (không phải `*.github.io`): điền `GITHUB_REPO = "owner/repo"`.
 - **Trang không nằm ở gốc repo** (ví dụ deploy từ `docs/`): sửa `DATA_PATH`
   thành đường dẫn thật trong repo, ví dụ `"docs/data"`.
-
-Lưu ý: GitHub API đọc branch mặc định của repo. Nếu Pages deploy từ branch khác
-(ví dụ `gh-pages`) thì danh sách có thể lệch — khi đó dùng `data/manifest.txt`
-(xem bên dưới) làm nguồn danh sách thay thế.
 
 ## Thêm chỉ số mới
 
