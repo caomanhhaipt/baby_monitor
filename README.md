@@ -38,17 +38,21 @@ Tạo một file `.txt` trong thư mục `data/`, các cột cách nhau bằng *
 
 ```
 Cân nặng ước tính	g
-16	146
-20	331
-22	478
+28/06/2026	16w1	146
+25/07/2026	20	331
+10/08/2026	22w2	478
 ```
 
 - **Dòng đầu**: tên chỉ số `<tab>` đơn vị đo.
-- **Các dòng sau**: mốc khám `<tab>` giá trị đo được.
-- Mốc khám là **tuần thai** (`12`, `12.5`, `12w3d`, `tuần 12`) hoặc **ngày khám**
-  (`13/08/2026`, `2026-08-13`) — dùng thống nhất một kiểu cho tất cả các file.
-- Tuần nào chưa đo chỉ số nào thì bỏ qua, không cần điền — biểu đồ tự xử lý điểm thiếu.
+- **Các dòng sau**: ngày khám `<tab>` tuần thai `<tab>` giá trị đo được.
+- Ngày khám viết `28/06/2026` hoặc `2026-06-28`.
+- Tuần thai viết `20` (chẵn tuần) hoặc `16w1` (16 tuần 1 ngày); `16w1d`,
+  `16.5` cũng được. Biểu đồ vẽ theo tuần thai; ngày khám hiện ở tooltip
+  và bảng số liệu.
+- Lần khám nào không đo chỉ số nào thì bỏ qua, không cần điền — biểu đồ tự
+  xử lý điểm thiếu.
 - Số thập phân viết `12.5` hoặc `12,5` đều được.
+- Format 2 cột cũ (`mốc khám <tab> giá trị`) vẫn đọc được.
 
 Thêm file xong bấm **Tải lại dữ liệu** (hoặc F5). Không cần khai báo gì thêm —
 trang tự quét thư mục `data/`.

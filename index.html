@@ -217,12 +217,20 @@ function parseTime(s) {
   return null;
 }
 
+// 12 → "12", 12+3/7 → "12w3" (cùng ký hiệu với dữ liệu nhập)
+function weekLabel(t) {
+  const w = Math.floor(t + 1e-9);
+  const d = Math.round((t - w) * 7);
+  if (d >= 7) return String(w + 1);
+  return d > 0 ? `${w}w${d}` : String(w);
+}
+
 function displayTime(t, kind) {
   if (kind === "date") {
     const d = new Date(t);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   }
-  return `Tuần ${nf.format(t)}`;
+  return `Tuần ${weekLabel(t)}`;
 }
 
 function parseMetricFile(file, text) {
@@ -234,11 +242,20 @@ function parseMetricFile(file, text) {
   const points = [], bad = [];
   for (const line of lines.slice(1)) {
     const cols = splitCols(line);
-    if (cols.length < 2) { bad.push(line); continue; }
-    const time = parseTime(cols[0]);
-    const value = parseNumber(cols[1]);
-    if (!time || !Number.isFinite(value)) { bad.push(line); continue; }
-    points.push({ ...time, value });
+    if (cols.length >= 3) {
+      // 3 cột: ngày khám <tab> tuần thai (vd 26w5) <tab> giá trị
+      const date = parseTime(cols[0]);
+      const week = parseTime(cols[1]);
+      const value = parseNumber(cols[2]);
+      if (!week || week.kind !== "week" || !Number.isFinite(value)) { bad.push(line); continue; }
+      points.push({ kind: "week", t: week.t, value, date: date && date.kind === "date" ? date.t : null });
+    } else if (cols.length === 2) {
+      // 2 cột (format cũ): mốc khám <tab> giá trị
+      const time = parseTime(cols[0]);
+      const value = parseNumber(cols[1]);
+      if (!time || !Number.isFinite(value)) { bad.push(line); continue; }
+      points.push({ ...time, value, date: time.kind === "date" ? time.t : null });
+    } else bad.push(line);
   }
   return { file, name, unit, points, bad };
 }
@@ -333,7 +350,7 @@ function ingest(results) {
     const dropped = m.points.filter(p => p.kind !== timeKind);
     if (dropped.length) errors.push(`${m.file}: bỏ qua ${dropped.length} dòng có mốc thời gian khác kiểu (${timeKind === "week" ? "tuần" : "ngày"})`);
     m.points = m.points.filter(p => p.kind === timeKind)
-      .map(p => ({ t: p.t, value: p.value, display: displayTime(p.t, timeKind) }))
+      .map(p => ({ t: p.t, value: p.value, date: p.date ?? null, display: displayTime(p.t, timeKind) }))
       .sort((a, b) => a.t - b.t);
     if (m.bad.length) errors.push(`${m.file}: bỏ qua ${m.bad.length} dòng không đọc được`);
   }
@@ -492,6 +509,14 @@ function unionTimes() {
   return [...new Set(metrics.filter(m => !hidden.has(m.file)).flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
 }
 
+// Ngày khám ứng với một mốc tuần thai (lấy từ bất kỳ chỉ số nào có ghi ngày)
+function dateAt(t) {
+  for (const m of metrics)
+    for (const p of m.points)
+      if (p.t === t && p.date != null) return p.date;
+  return null;
+}
+
 function onHover(t, cx, cy) {
   const times = unionTimes();
   if (!times.length) return;
@@ -510,6 +535,10 @@ function onHover(t, cx, cy) {
   const head = document.createElement("div");
   head.className = "tt-head";
   head.textContent = displayTime(snapped, timeKind);
+  if (timeKind === "week") {
+    const date = dateAt(snapped);
+    if (date != null) head.textContent += ` · ${displayTime(date, "date")}`;
+  }
   tip.appendChild(head);
   for (const m of metrics) {
     if (hidden.has(m.file)) continue;
@@ -574,10 +603,16 @@ function renderTable() {
   $("tableView").hidden = false;
 
   const times = [...new Set(metrics.flatMap(m => m.points.map(p => p.t)))].sort((a, b) => a - b);
+  const hasDates = timeKind === "week" && times.some(t => dateAt(t) != null);
   const thead = table.createTHead().insertRow();
   const th0 = document.createElement("th");
   th0.textContent = timeKind === "week" ? "Tuần thai" : "Ngày khám";
   thead.appendChild(th0);
+  if (hasDates) {
+    const th = document.createElement("th");
+    th.textContent = "Ngày khám";
+    thead.appendChild(th);
+  }
   for (const m of metrics) {
     const th = document.createElement("th");
     th.textContent = `${m.name} (${m.unit})`;
@@ -588,6 +623,12 @@ function renderTable() {
     const tr = tbody.insertRow();
     const td0 = tr.insertCell();
     td0.textContent = displayTime(t, timeKind);
+    if (hasDates) {
+      const td = tr.insertCell();
+      const date = dateAt(t);
+      if (date != null) td.textContent = displayTime(date, "date");
+      else { td.textContent = "–"; td.className = "empty"; }
+    }
     for (const m of metrics) {
       const p = m.points.find(p => p.t === t);
       const td = tr.insertCell();
