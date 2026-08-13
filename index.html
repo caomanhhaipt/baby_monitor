@@ -254,6 +254,31 @@ function stripNameUnit(cell) {
 
 const isMissing = v => v == null || v === "" || v === "-" || v === "–" || v === "—";
 
+// Nhận diện ký tự phân cách của file bảng: tab (.txt) hoặc , ; (.csv)
+function detectDelim(line) {
+  if (line.includes("\t")) return "\t";
+  const sc = (line.match(/;/g) || []).length;
+  const cc = (line.match(/,/g) || []).length;
+  return sc > cc ? ";" : ",";
+}
+
+// Tách một dòng theo ký tự phân cách, tôn trọng ngoặc kép kiểu CSV của Excel
+function splitDelim(line, d) {
+  const out = [];
+  let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === d) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
 // Một file data có thể chứa một hoặc nhiều chỉ số:
 // - Dạng bảng rộng (dòng đầu ≥ 3 cột): ngày khám / tuần thai / mỗi cột một chỉ số,
 //   header cột dạng "Tên (đơn vị)", ô chưa đo điền "-".
@@ -261,18 +286,19 @@ const isMissing = v => v == null || v === "" || v === "-" || v === "–" || v ==
 function parseDataFile(file, text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
   if (!lines.length) return { error: `${file}: file rỗng` };
-  if (lines[0].split("\t").map(s => s.trim()).filter(Boolean).length >= 3)
-    return parseWideFile(file, lines);
-  return parseNarrowFile(file, lines);
+  const delim = detectDelim(lines[0]);
+  if (splitDelim(lines[0], delim).filter(Boolean).length >= 3)
+    return parseWideFile(file, lines, delim);
+  return parseNarrowFile(file, lines, delim);
 }
 
-function parseWideFile(file, lines) {
-  const head = lines[0].split("\t").map(s => s.trim());
+function parseWideFile(file, lines, delim) {
+  const head = splitDelim(lines[0], delim);
   const cols = head.slice(2).map(stripNameUnit).filter(c => c.name);
   const metricsOut = cols.map((c, i) => ({ file, col: i, name: c.name, unit: c.unit, points: [], bad: [] }));
   const bad = [];
   for (const line of lines.slice(1)) {
-    const cells = line.split("\t").map(s => s.trim());
+    const cells = splitDelim(line, delim);
     const date = parseTime(cells[0] ?? "");
     const week = parseTime(cells[1] ?? "");
     if (!week || week.kind !== "week") { bad.push(line); continue; }
@@ -288,13 +314,14 @@ function parseWideFile(file, lines) {
   return { file, metrics: metricsOut, bad };
 }
 
-function parseNarrowFile(file, lines) {
-  const head = splitCols(lines[0]);
+function parseNarrowFile(file, lines, delim) {
+  const split = delim === "\t" ? splitCols : l => splitDelim(l, delim).filter(Boolean);
+  const head = split(lines[0]);
   if (head.length < 2) return { error: `${file}: dòng đầu phải có "tên chỉ số<TAB>đơn vị"` };
   const [name, unit] = head;
   const points = [], bad = [];
   for (const line of lines.slice(1)) {
-    const cols = splitCols(line);
+    const cols = split(line);
     if (cols.length >= 3) {
       // 3 cột: ngày khám <tab> tuần thai (vd 26w5) <tab> giá trị
       const date = parseTime(cols[0]);
@@ -326,7 +353,7 @@ async function listDataFiles() {
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
       const found = [...doc.querySelectorAll("a[href]")]
         .map(a => decodeURIComponent(a.getAttribute("href").split("/").pop().split("?")[0]))
-        .filter(n => /\.txt$/i.test(n) && n.toLowerCase() !== "manifest.txt");
+        .filter(n => /\.(txt|csv)$/i.test(n) && n.toLowerCase() !== "manifest.txt");
       if (found.length) names = [...new Set(found)];
     }
   } catch (e) { /* thử cách tiếp theo */ }
@@ -335,7 +362,7 @@ async function listDataFiles() {
     const res = await fetch("data/manifest.txt", { cache: "no-store" });
     if (res.ok) {
       const found = (await res.text()).split(/\r?\n/).map(s => s.trim())
-        .filter(n => n && !n.startsWith("#") && /\.txt$/i.test(n));
+        .filter(n => n && !n.startsWith("#") && /\.(txt|csv)$/i.test(n));
       if (found.length) names = found;
     }
   } catch (e) { /* thử cách tiếp theo */ }
@@ -381,7 +408,7 @@ async function listFromGitHubAPI() {
   const items = await res.json();
   if (!Array.isArray(items)) return null;
   return items
-    .filter(it => it.type === "file" && /\.txt$/i.test(it.name) && it.name.toLowerCase() !== "manifest.txt")
+    .filter(it => it.type === "file" && /\.(txt|csv)$/i.test(it.name) && it.name.toLowerCase() !== "manifest.txt")
     .map(it => it.name);
 }
 
@@ -499,7 +526,7 @@ function refSlice(ref, lo, hi) {
 }
 
 function loadFromFileList(fileList) {
-  const files = [...fileList].filter(f => /\.txt$/i.test(f.name) && f.name.toLowerCase() !== "manifest.txt");
+  const files = [...fileList].filter(f => /\.(txt|csv)$/i.test(f.name) && f.name.toLowerCase() !== "manifest.txt");
   return Promise.all(files.map(f => f.text().then(text => parseDataFile(f.name, text))));
 }
 
@@ -910,7 +937,7 @@ function showPicker(reason) {
       const errors = ingest(results);
       await loadRefs();
       renderAll(errors);
-    } else showNotice(document.createTextNode("Thư mục đã chọn không có file .txt nào."));
+    } else showNotice(document.createTextNode("Thư mục đã chọn không có file .txt/.csv nào."));
   });
   picker.append(btn, input);
   frag.append(p, picker);
@@ -924,7 +951,7 @@ async function boot() {
   updateStatus();
   if (results === null) { showPicker(); return; }
   if (!results.length) {
-    showNotice(document.createTextNode("Thư mục data/ chưa có file .txt nào. Thêm file rồi bấm “Tải lại dữ liệu”."));
+    showNotice(document.createTextNode("Thư mục data/ chưa có file .txt/.csv nào. Thêm file rồi bấm “Tải lại dữ liệu”."));
     $("controls").hidden = false;
     return;
   }

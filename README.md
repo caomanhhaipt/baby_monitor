@@ -36,14 +36,16 @@ Hai trường hợp cần chỉnh tay khi dùng đường API dự phòng (2 h�
 
 ## Nhập số liệu
 
-Toàn bộ số liệu nằm trong một file bảng: `data/kham-thai.txt`, các cột cách
-nhau bằng **tab**. Mỗi lần đi khám thêm đúng **một dòng**:
+Toàn bộ số liệu nằm trong một file bảng: `data/kham-thai.csv`. Cách điền dễ
+nhất: **mở bằng Excel / Google Sheets / LibreOffice** — file hiện thành lưới ô
+thẳng hàng, mỗi lần đi khám thêm đúng **một dòng** rồi lưu lại đúng định dạng
+CSV:
 
-```
-Ngày khám	Tuần thai	Cân nặng ước tính (g)	Nhịp tim thai (lần/phút)
-28/06/2026	16w1	146	152
-25/07/2026	20	331	146
-10/08/2026	22w2	478	-
+```csv
+Ngày khám,Tuần thai,Cân nặng ước tính (g),Nhịp tim thai (lần/phút)
+28/06/2026,16w1,146,152
+25/07/2026,20,331,146
+10/08/2026,22w2,478,-
 ```
 
 - **Dòng đầu (header)**: hai cột đầu là ngày khám và tuần thai, mỗi cột sau là
@@ -52,10 +54,12 @@ Ngày khám	Tuần thai	Cân nặng ước tính (g)	Nhịp tim thai (lần/phú
 - Tuần thai viết `20` (chẵn tuần) hoặc `16w1` (16 tuần 1 ngày); `16w1d`,
   `16.5` cũng được. Biểu đồ vẽ theo tuần thai; ngày khám hiện ở tooltip
   và bảng số liệu.
-- Ô nào chưa đo điền `-`.
-- Số thập phân viết `12.5` hoặc `12,5` đều được.
-- Có thể tách nhiều file bảng (vd mỗi tam cá nguyệt một file) — trang đọc mọi
-  file `.txt` trong `data/`. Format cũ mỗi-chỉ-số-một-file vẫn đọc được.
+- Ô nào chưa đo điền `-` (hoặc để trống).
+- Trang đọc mọi file `.csv`/`.txt` trong `data/`. CSV nhận cả dấu phẩy lẫn
+  chấm phẩy làm phân cách (Excel tiếng Việt hay xuất chấm phẩy); file `.txt`
+  tách cột bằng tab như trước. Format cũ mỗi-chỉ-số-một-file vẫn đọc được.
+- Số thập phân: trong file phân cách bằng phẩy thì bắt buộc dùng dấu chấm
+  (`12.5`); file tab hoặc chấm phẩy thì `12,5` cũng được.
 
 Thêm file xong bấm **Tải lại dữ liệu** (hoặc F5). Không cần khai báo gì thêm —
 trang tự quét thư mục `data/`.

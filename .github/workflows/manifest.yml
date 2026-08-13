@@ -21,7 +21,7 @@ jobs:
       - name: Sinh data/manifest.txt
         run: |
           cd data
-          ls -1 *.txt | grep -vix 'manifest\.txt' > manifest.txt
+          ls -1 *.txt *.csv 2>/dev/null | grep -vix 'manifest\.txt' > manifest.txt
           cat manifest.txt
 
       - name: Commit nếu có thay đổi
