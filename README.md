@@ -117,6 +117,8 @@ Nguồn số liệu (ghi cả trong đầu file `refs.txt`):
 ## Tính năng
 
 - Tick bật/tắt từng chỉ số (trạng thái được nhớ lại giữa các lần mở).
+- Nút ⤢ ở góc mỗi biểu đồ để phóng to xem riêng chỉ số đó (đóng bằng ✕, phím
+  Esc, hoặc bấm ra vùng nền).
 - Di chuột lên biểu đồ: crosshair đồng bộ mọi panel + tooltip hiện tất cả chỉ số
   tại mốc đó.
 - Bảng số liệu đầy đủ ở cuối trang (mốc nào thiếu chỉ số nào hiện "–").

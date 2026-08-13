@@ -110,9 +110,41 @@
   svg .baseline { stroke: var(--axis); stroke-width: 1; }
   svg .crosshair { stroke: var(--axis); stroke-width: 1; pointer-events: none; }
 
+  .panel h2 .zoom-btn {
+    margin-left: auto; flex: none;
+    font: inherit; line-height: 1; color: var(--text-muted);
+    background: none; border: 1px solid transparent; border-radius: 7px;
+    padding: 3px 7px; cursor: pointer;
+  }
+  .panel h2 .zoom-btn:hover { color: var(--text-primary); border-color: var(--border); }
+
+  /* Lớp phủ xem biểu đồ phóng to */
+  .zoom-overlay { display: none; }
+  .zoom-overlay:not([hidden]) {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(0,0,0,.45);
+    padding: 20px;
+  }
+  .zoom-card {
+    position: relative;
+    max-width: 100%; max-height: 94vh; overflow: auto;
+    border-radius: 14px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.35);
+  }
+  .zoom-card .panel { border-radius: 14px; padding: 16px 16px 10px; }
+  .zoom-card .panel h2 { font-size: 15px; }
+  .zoom-close {
+    position: absolute; top: 10px; right: 12px; z-index: 1;
+    font: inherit; line-height: 1; color: var(--text-secondary);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 4px 9px; cursor: pointer;
+  }
+  .zoom-close:hover { color: var(--text-primary); }
+
   /* Tooltip chung */
   #tooltip {
-    position: fixed; z-index: 10; pointer-events: none;
+    position: fixed; z-index: 30; pointer-events: none;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 10px; padding: 8px 12px;
     box-shadow: 0 4px 16px rgba(0,0,0,.12);
@@ -180,6 +212,13 @@
     <summary>Bảng số liệu</summary>
     <div class="table-scroll"><table id="dataTable"></table></div>
   </details>
+</div>
+
+<div class="zoom-overlay" id="zoom" hidden>
+  <div class="zoom-card" role="dialog" aria-modal="true" aria-label="Biểu đồ phóng to">
+    <button type="button" class="zoom-close" id="zoomClose" aria-label="Đóng">✕</button>
+    <div id="zoomBody"></div>
+  </div>
 </div>
 
 <div id="tooltip"></div>
@@ -651,32 +690,17 @@ function el(tag, attrs, parent) {
 const M = { top: 10, right: 52, left: 50 };
 const PLOT_H = 154; // chiều cao vùng vẽ; chiều cao panel = top + PLOT_H + lề dưới
 let panelState = []; // {metric, svg, sx, points, crosshair, dots}
+let zoomMetric = null; // key của chỉ số đang xem phóng to
 
-function renderCharts() {
-  const chartsBox = $("charts");
-  chartsBox.textContent = "";
-  panelState = [];
-  const visible = metrics.filter(m => !hidden.has(m.key));
-  if (!metrics.length) return;
-  if (!visible.length) {
-    const d = document.createElement("div");
-    d.className = "notice";
-    d.textContent = "Chưa chọn chỉ số nào — tick vào một chỉ số phía trên để vẽ biểu đồ.";
-    chartsBox.appendChild(d);
-    return;
-  }
+// Vẽ một biểu đồ ở kích thước bất kỳ — dùng chung cho lưới nhỏ và bản phóng to.
+// Trả về section đã dựng xong kèm state để crosshair/tooltip bám vào.
+function buildPanel(m, width, plotH, dom, axis, zoomable) {
+    const mBottom = axis.vertical ? 96 : 26;
+    const panelH = M.top + plotH + mBottom;
+    const baseY = M.top + plotH;
+    const plotW = width - M.left - M.right;
+    const sx = t => M.left + (t - dom.lo) / (dom.hi - dom.lo) * plotW;
 
-  const dom = xDomain();
-  const axis = axisTicks(dom);
-  const mBottom = axis.vertical ? 96 : 26;
-  const panelH = M.top + PLOT_H + mBottom;
-  const baseY = M.top + PLOT_H;
-  const width = Math.max(300, (chartsBox.clientWidth - (chartsBox.clientWidth >= 720 ? 16 : 0)) / (chartsBox.clientWidth >= 720 ? 2 : 1));
-  const plotW = width - M.left - M.right;
-  const plotH = PLOT_H;
-  const sx = t => M.left + (t - dom.lo) / (dom.hi - dom.lo) * plotW;
-
-  for (const m of visible) {
     const panel = document.createElement("section");
     panel.className = "panel";
     panel.style.setProperty("--c", `var(--series-${m.slot || 1})`);
@@ -687,6 +711,16 @@ function renderCharts() {
     const un = document.createElement("span"); un.className = "unit";
     if (m.unit) un.textContent = `(${m.unit})`;
     h2.append(sw, nm, un);
+    if (zoomable) {
+      const zb = document.createElement("button");
+      zb.type = "button";
+      zb.className = "zoom-btn";
+      zb.title = "Phóng to";
+      zb.setAttribute("aria-label", `Phóng to biểu đồ ${m.name}`);
+      zb.textContent = "⤢";
+      zb.addEventListener("click", () => openZoom(m));
+      h2.appendChild(zb);
+    }
     panel.appendChild(h2);
 
     const svg = el("svg", { viewBox: `0 0 ${width} ${panelH}`, role: "img" });
@@ -779,9 +813,69 @@ function renderCharts() {
     hit.addEventListener("pointerleave", clearHover);
 
     panel.appendChild(svg);
-    chartsBox.appendChild(panel);
-    panelState.push({ metric: m, sx, crosshair, dots });
+    return { panel, state: { metric: m, sx, crosshair, dots } };
+}
+
+function renderCharts() {
+  const chartsBox = $("charts");
+  chartsBox.textContent = "";
+  panelState = [];
+  const visible = metrics.filter(m => !hidden.has(m.key));
+  if (!metrics.length) return;
+  if (!visible.length) {
+    const d = document.createElement("div");
+    d.className = "notice";
+    d.textContent = "Chưa chọn chỉ số nào — tick vào một chỉ số phía trên để vẽ biểu đồ.";
+    chartsBox.appendChild(d);
+    return;
   }
+
+  const dom = xDomain();
+  const axis = axisTicks(dom);
+  const twoCol = chartsBox.clientWidth >= 720;
+  const width = Math.max(300, (chartsBox.clientWidth - (twoCol ? 16 : 0)) / (twoCol ? 2 : 1));
+
+  for (const m of visible) {
+    const { panel, state } = buildPanel(m, width, PLOT_H, dom, axis, true);
+    chartsBox.appendChild(panel);
+    panelState.push(state);
+  }
+  if (zoomMetric) drawZoom(); // giữ bản phóng to khớp với lần vẽ lại này
+}
+
+/* ---------- Phóng to một biểu đồ ---------- */
+
+function drawZoom() {
+  const m = metrics.find(x => x.key === zoomMetric);
+  if (!m) { closeZoom(); return; }
+  const body = $("zoomBody");
+  body.textContent = "";
+  const dom = xDomain();
+  const axis = axisTicks(dom);
+  const width = Math.min(1200, innerWidth - 48);
+  const mBottom = axis.vertical ? 96 : 26;
+  const plotH = Math.max(240, Math.min(620, innerHeight - 190 - M.top - mBottom));
+  const { panel, state } = buildPanel(m, width, plotH, dom, axis, false);
+  panel.style.width = width + "px";
+  body.appendChild(panel);
+  panelState = [state]; // hover trong bản phóng to chỉ điều khiển chính nó
+  $("zoom").hidden = false;
+}
+
+function openZoom(m) {
+  zoomMetric = m.key;
+  document.body.style.overflow = "hidden";
+  drawZoom();
+  $("zoomClose").focus();
+}
+
+function closeZoom() {
+  zoomMetric = null;
+  $("zoom").hidden = true;
+  $("zoomBody").textContent = "";
+  document.body.style.overflow = "";
+  clearHover();
+  renderCharts();
 }
 
 /* ---------- Crosshair đồng bộ + tooltip chung ---------- */
@@ -1018,6 +1112,9 @@ async function boot() {
 }
 
 $("reload").addEventListener("click", boot);
+$("zoomClose").addEventListener("click", closeZoom);
+$("zoom").addEventListener("click", e => { if (e.target === $("zoom")) closeZoom(); });
+addEventListener("keydown", e => { if (e.key === "Escape" && zoomMetric) closeZoom(); });
 let resizeTimer;
 addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderCharts, 120); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderCharts);
