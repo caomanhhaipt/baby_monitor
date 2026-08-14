@@ -106,6 +106,7 @@
 
   svg text { font-family: inherit; font-size: 11px; fill: var(--text-muted); }
   svg .endlabel { fill: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+  svg .endlabel-sub { fill: var(--text-muted); font-size: 10px; }
   svg .gridline { stroke: var(--grid); stroke-width: 1; }
   svg .baseline { stroke: var(--axis); stroke-width: 1; }
   svg .crosshair { stroke: var(--axis); stroke-width: 1; pointer-events: none; }
@@ -176,6 +177,17 @@
   td .note { color: var(--text-muted); font-variant-numeric: normal; }
   tr:last-child td { border-bottom: none; }
   td.empty { color: var(--text-muted); }
+
+  /* In / xuất PDF: bỏ phần điều khiển, giữ biểu đồ + bảng, xếp 2 cột cho gọn giấy */
+  @media print {
+    body { background: #fff; }
+    .controls, .zoom-btn, .zoom-overlay, .notice, #tooltip { display: none !important; }
+    .charts { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .panel, .table-scroll { break-inside: avoid; }
+    details.table-view summary { list-style: none; cursor: default; }
+    table { font-size: 11px; }
+    th, td { padding: 4px 7px; }
+  }
 </style>
 </head>
 <body>
@@ -189,6 +201,7 @@
   <div class="controls" id="controls" hidden>
     <div id="toggles" style="display:contents"></div>
     <span class="spacer"></span>
+    <button id="print" type="button">In / PDF</button>
     <button id="reload" type="button">Tải lại dữ liệu</button>
   </div>
 
@@ -530,11 +543,18 @@ function parseRefRows(lines) {
 }
 
 // refs.txt: một file cho mọi chỉ số, chia mục bằng dòng "# Tên chỉ số"
-// (tên phải khớp tên cột/chỉ số trong data, không tính phần đơn vị)
+// (tên phải khớp tên cột/chỉ số trong data, không tính phần đơn vị).
+// Dòng header của mục quyết định ý nghĩa dải: "p10 p50 p90" là percentile thật
+// (trang được phép ước lượng vị trí percentile), "min mid max" chỉ là khoảng
+// bình thường — vẫn vẽ vùng nhưng không tính percentile.
 function parseRefSections(text) {
   const out = {};
   let cur = null, buf = [];
-  const flush = () => { if (cur) { const rows = parseRefRows(buf); if (rows) out[cur] = rows; } };
+  const flush = () => {
+    if (!cur) return;
+    const rows = parseRefRows(buf);
+    if (rows) { rows.pct = buf.some(l => /\bp10\b/i.test(l)); out[cur] = rows; }
+  };
   for (const line of text.split(/\r?\n/)) {
     const l = line.trim();
     if (!l) continue;
@@ -558,9 +578,47 @@ async function loadRefs() {
     if (m.ref || m.col != null) return;
     try {
       const res = await fetch("refs/" + encodeURIComponent(m.file), { cache: "no-store" });
-      if (res.ok) m.ref = parseRefRows((await res.text()).split(/\r?\n/).map(l => l.trim()).filter(Boolean));
+      if (res.ok) {
+        const lines = (await res.text()).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        m.ref = parseRefRows(lines);
+        if (m.ref) m.ref.pct = lines.some(l => /\bp10\b/i.test(l));
+      }
     } catch (e) { /* không có tham chiếu thì bỏ qua */ }
   }));
+}
+
+// Hàm lỗi Gauss (xấp xỉ Abramowitz–Stegun, sai số < 1.5e-7 — thừa cho hiển thị)
+function erf(x) {
+  const s = x < 0 ? -1 : 1;
+  x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+
+// Nội suy dải tham chiếu tại đúng một mốc tuần
+function refAt(ref, t) {
+  for (let i = 0; i < ref.length - 1; i++) {
+    const a = ref[i], b = ref[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const k = (t - a.t) / (b.t - a.t || 1);
+      return { lo: a.lo + k * (b.lo - a.lo), mid: a.mid + k * (b.mid - a.mid), hi: a.hi + k * (b.hi - a.hi) };
+    }
+  }
+  return null;
+}
+
+// Ước lượng bách phân vị của một điểm đo so với dải chuẩn: p10–p90 phủ
+// 2×1.2816 độ lệch chuẩn quanh trung vị (giả định phân phối chuẩn). Chỉ tính
+// cho mục refs có header p10/p50/p90 — dải "min mid max" không phải percentile.
+function percentileOf(m, p) {
+  if (!m.ref || !m.ref.pct || timeKind !== "week") return null;
+  const r = refAt(m.ref, p.t);
+  if (!r) return null;
+  const sd = (r.hi - r.lo) / 2.5632;
+  if (sd <= 0) return null;
+  const pct = 100 * 0.5 * (1 + erf((p.value - r.mid) / sd / Math.SQRT2));
+  return Math.min(99, Math.max(1, Math.round(pct)));
 }
 
 // Cắt dải tham chiếu về đúng khoảng trục x, nội suy tuyến tính ở hai đầu
@@ -795,10 +853,15 @@ function buildPanel(m, width, plotH, dom, axis, zoomable) {
     const dots = m.points.map(p =>
       el("circle", { cx: sx(p.t), cy: sy(p.value), r: 4.5, fill: color, stroke: "var(--surface)", "stroke-width": 2 }, svg));
 
-    // Nhãn trực tiếp ở điểm cuối
+    // Nhãn trực tiếp ở điểm cuối: giá trị + bách phân vị ước lượng (nếu có)
     const last = m.points[m.points.length - 1];
     const lbl = el("text", { class: "endlabel", x: sx(last.t) + 9, y: sy(last.value) + 4 }, svg);
     lbl.textContent = nf.format(last.value);
+    const pcLast = percentileOf(m, last);
+    if (pcLast != null) {
+      const sub = el("text", { class: "endlabel-sub", x: sx(last.t) + 9, y: sy(last.value) + 16 }, svg);
+      sub.textContent = `p${pcLast}`;
+    }
 
     const crosshair = el("line", { class: "crosshair", y1: M.top, y2: baseY, visibility: "hidden" }, svg);
 
@@ -944,6 +1007,12 @@ function onHover(t, cx, cy) {
         row.appendChild(d);
       }
     }
+    const pc = percentileOf(m, p);
+    if (pc != null) {
+      const s = document.createElement("span"); s.className = "tt-delta";
+      s.textContent = `p${pc}`;
+      row.appendChild(s);
+    }
     const name = document.createElement("span"); name.className = "tt-name"; name.textContent = m.name;
     row.appendChild(name);
     tip.appendChild(row);
@@ -1034,8 +1103,16 @@ function renderTable() {
     for (const m of metrics) {
       const p = m.points.find(p => p.t === t);
       const td = tr.insertCell();
-      if (p) td.textContent = nf.format(p.value);
-      else { td.textContent = "–"; td.className = "empty"; }
+      if (p) {
+        td.textContent = nf.format(p.value);
+        const pc = percentileOf(m, p);
+        if (pc != null) {
+          const s = document.createElement("span");
+          s.className = "note";
+          s.textContent = ` p${pc}`;
+          td.appendChild(s);
+        }
+      } else { td.textContent = "–"; td.className = "empty"; }
     }
   }
 }
@@ -1112,6 +1189,8 @@ async function boot() {
 }
 
 $("reload").addEventListener("click", boot);
+$("print").addEventListener("click", () => print());
+addEventListener("beforeprint", () => { $("tableView").open = true; });
 $("zoomClose").addEventListener("click", closeZoom);
 $("zoom").addEventListener("click", e => { if (e.target === $("zoom")) closeZoom(); });
 addEventListener("keydown", e => { if (e.key === "Escape" && zoomMetric) closeZoom(); });

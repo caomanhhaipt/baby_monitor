@@ -122,4 +122,11 @@ Nguồn số liệu (ghi cả trong đầu file `refs.txt`):
 - Di chuột lên biểu đồ: crosshair đồng bộ mọi panel + tooltip hiện tất cả chỉ số
   tại mốc đó.
 - Bảng số liệu đầy đủ ở cuối trang (mốc nào thiếu chỉ số nào hiện "–").
+- **Bách phân vị ước lượng** hiện cạnh từng giá trị (tooltip, bảng, nhãn cuối
+  biểu đồ) cho các chỉ số có bảng chuẩn percentile trong `refs.txt`. Chỉ là ước
+  lượng từ dải p10–p90 (giả định phân phối chuẩn) — con số bác sĩ ghi trên phiếu
+  mới là chuẩn. Mục refs có header `min mid max` (vd Chu kỳ tim) chỉ vẽ vùng,
+  không tính percentile.
+- Nút **In / PDF**: xuất cả bộ biểu đồ + bảng số liệu thành PDF mang đi khám
+  (biểu đồ xếp 2 cột, phần điều khiển được ẩn).
 - Tự theo giao diện sáng/tối của hệ điều hành.

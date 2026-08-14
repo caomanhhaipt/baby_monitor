@@ -1,6 +1,8 @@
 # KHOẢNG THAM CHIẾU — tên mục phải TRÙNG tên cột trong data/kham-thai.csv
 # (phần đơn vị trong ngoặc ở cuối tên cột được bỏ đi khi so khớp).
 # Format mỗi mục:  tuần <tab> p10 <tab> p50 <tab> p90 ; giữa các tuần trang tự nội suy.
+# Header ghi "p10 p50 p90" nghĩa là percentile thật — trang sẽ ước lượng bách phân vị
+# cho từng điểm đo. Header ghi "min mid max" là khoảng bình thường: chỉ vẽ vùng.
 #
 # NGUỒN:
 # - Cân nặng, BPD, HC, AC, FL, HL: WHO Fetal Growth Charts (Kiserud et al 2017,
@@ -218,9 +220,10 @@ tuần	p10	p50	p90
 39	60	64	67
 40	60	64	68
 
-# nguồn: Khoảng lâm sàng tổng hợp — KHÔNG phải percentile
+# nguồn: Khoảng lâm sàng tổng hợp — KHÔNG phải percentile, nên header là
+# min/mid/max: trang vẫn vẽ vùng nhưng không ước lượng bách phân vị cho mục này
 # Chu kỳ tim
-tuần	p10	p50	p90
+tuần	min	mid	max
 6	100	110	115
 7	120	135	150
 8	145	158	170
